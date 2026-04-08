@@ -6,19 +6,26 @@ def create_graph(type, **kwargs):
     Just a wrapper 
     """
     n = kwargs.get('n', 10)
+    p = kwargs.get('p', 0.1)
 
     if type == 'star':
         G = create_star_graph(n)
-    if type == 'tree':
+    elif type == 'tree':
         G = create_tree_graph(n)
-    if type == 'cycle':
+    elif type == 'cycle':
         G = create_cycle_graph(n)
-    if type == 'path':
+    elif type == 'path':
         G = create_path_graph(n)
+    elif type == 'complete':
+        G = create_complete_graph(n)
+    elif type == 'erdos_renyi':
+        G = create_erdos_renyi_graph(n, p)
+    else:
+        raise ValueError(f"Unknown graph type: {type}")
     return G 
     
 def create_star_graph(n):
-    G =  nx.star_graph(n) 
+    G =  nx.star_graph(n-1) 
     return G 
 
 def create_tree_graph(n):
@@ -33,6 +40,13 @@ def create_path_graph(n):
     G = nx.path_graph(n)
     return G 
 
+def create_complete_graph(n):
+    G = nx.complete_graph(n)
+    return G
+
+def create_erdos_renyi_graph(n, p):
+    G = nx.erdos_renyi_graph(n, p, seed=42)
+    return G
 ###
 
 def add_nodes(G, nodes):
@@ -46,6 +60,14 @@ def add_edges(G, edges):
     for u, v in edges:
         if not G.has_edge(u, v):
             G.add_edge(u, v)
+    return G
+def remove_edges(G, edges):
+    """
+    edges is a list of tuple 
+    """
+    for u, v in edges:
+        if G.has_edge(u, v):
+            G.remove_edge(u, v)
     return G
 
 def add_n_arbitrary_nodes(G, n):

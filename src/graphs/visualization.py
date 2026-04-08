@@ -2,7 +2,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 
 
-def draw_layout(G, type, pos = None, seed = 42):
+def draw_layout(G, type = 'spring', pos = None, seed = 42):
     """
     Creating the 'pos' to run draw_graph
     """

@@ -21,10 +21,8 @@ def compute_gromov_hyperbolicity(dist_matrix):
 
         delta = (s[0] - s[1]) / 2.0
         deltas.append(delta)
-    print(deltas)
 
     return np.max(deltas), np.mean(deltas)
-
 
 
 
@@ -35,7 +33,7 @@ def compute_gromov_hyperbolicity_not_optimized(dist_matrix):
     n = dist_matrix.shape[0]
     deltas = []
     
-    count = 0
+
     for i, j, k, l in itertools.permutations(range(n), 4):
         d01 = dist_matrix[i, j]
         d23 = dist_matrix[k, l]
@@ -50,6 +48,5 @@ def compute_gromov_hyperbolicity_not_optimized(dist_matrix):
         delta = 0.5 * (s[0] - max(s[1], s[2]))
 
         deltas.append(delta)
-   
-    print(count)
+
     return np.max(deltas), np.mean(deltas)
