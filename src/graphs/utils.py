@@ -20,6 +20,8 @@ def create_graph(type, **kwargs):
         G = create_complete_graph(n)
     elif type == 'erdos_renyi':
         G = create_erdos_renyi_graph(n, p)
+    elif type == 'lattice':
+        G = create_lattice_graph(n)
     else:
         raise ValueError(f"Unknown graph type: {type}")
     return G 
@@ -47,7 +49,11 @@ def create_complete_graph(n):
 def create_erdos_renyi_graph(n, p):
     G = nx.erdos_renyi_graph(n, p, seed=42)
     return G
-###
+
+def create_lattice_graph(n,m):
+    G = nx.cartesian_product(nx.path_graph(n), nx.path_graph(m))
+    G = nx.convert_node_labels_to_integers(G)
+    return G
 
 def add_nodes(G, nodes):
     G.add_nodes_from(nodes)
@@ -61,6 +67,7 @@ def add_edges(G, edges):
         if not G.has_edge(u, v):
             G.add_edge(u, v)
     return G
+
 def remove_edges(G, edges):
     """
     edges is a list of tuple 
@@ -85,13 +92,15 @@ def compute_distance_nodes(G):
     Compute the distances between nodes using shortest path as metric
     """
     nodes = list(G.nodes())
+    index = {node: i for i, node in enumerate(nodes)}
     n = len(nodes)
-    dist = np.zeros((n, n))
 
-    lengths = dict(nx.all_pairs_shortest_path_length(G))
+    dist = np.full((n, n), np.inf)
 
-    for i, u in enumerate(nodes):
-        for j, v in enumerate(nodes):
-            dist[i, j] = lengths[u][v]
-    return dist 
-    
+    for u, lengths in nx.all_pairs_shortest_path_length(G):
+        i = index[u]
+        for v, d in lengths.items():
+            j = index[v]
+            dist[i, j] = d
+
+    return dist
