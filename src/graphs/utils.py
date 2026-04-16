@@ -1,6 +1,6 @@
 import networkx as nx
 import numpy as np
-
+import pickle
 def create_graph(type, **kwargs):
     """
     Just a wrapper 
@@ -104,3 +104,14 @@ def compute_distance_nodes(G):
             dist[i, j] = d
 
     return dist
+
+
+def save_graph(G, filename):
+    with open(filename, 'wb') as f:
+        pickle.dump(G, f)
+    print(f"Saved graph in {filename}.")
+
+def load_graph(filename):
+    with open(filename, 'rb') as f:
+        G = pickle.load(f)
+    return G

@@ -1,12 +1,39 @@
 import itertools
 import numpy as np
-from ..graphs.utils import compute_distance_nodes
 import random
 from ..graphs.visualization import draw_quadruples
 import networkx as nx
 
 random.seed(42)
 np.random.seed(42)
+
+def compute_distance_nodes(G):
+    """
+    Compute the distances between nodes using shortest path as metric
+    """
+    nodes = list(G.nodes())
+    index = {node: i for i, node in enumerate(nodes)}
+    n = len(nodes)
+
+    dist = np.full((n, n), np.inf)
+
+    for u, lengths in nx.all_pairs_shortest_path_length(G):
+        i = index[u]
+        for v, d in lengths.items():
+            j = index[v]
+            dist[i, j] = d
+
+    return dist
+
+def compute_delta_gromov(dist_matrix, x, y, z, w):
+    d01, d23 = dist_matrix[x, y], dist_matrix[z, w]
+    d02, d13 = dist_matrix[x, z], dist_matrix[y, w]
+    d03, d12 = dist_matrix[x, w], dist_matrix[y, z]
+
+    s = [d01 + d23, d02 + d13, d03 + d12]
+    s.sort(reverse=True)
+    return (s[0] - s[1]) / 2.0
+
 def compute_gromov_on_graph(G,return_history=False, return_mean=False):
     """
     Compute Gromov hyperbolicity from a graph.
@@ -155,10 +182,7 @@ def evolve_topology_strategy(G, pos, target='increase', strategy='mixed', p=0.5,
         fallback_gromov, _, fall_quadruples = compute_gromov_on_graph(G,return_history=True)
         print(f"Current Gromov after fallback: {fallback_gromov}")
         print(f"Number of quadruples after fallback: {len(fall_quadruples)}")
-        if len(fall_quadruples) < 40:
-            draw_quadruples(G, pos ,fall_quadruples)
-        else:
-            print("too many quadruples to visualize")
+        #draw_quadruples(G, pos ,fall_quadruples)
         
     print(f"We found {len(found_edges)} optimal edges.")
     return found_edges

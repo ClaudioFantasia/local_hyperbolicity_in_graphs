@@ -74,10 +74,13 @@ def draw_graphs(graphs, poses, titles=None,
     return fig, axes
 
 
-def draw_quadruples(G, pos, quadruples):
+def draw_quadruples(G, pos, quadruples, max_to_draw=9):
     """
-    Wrapper specifico per visualizzare le quadruple critiche di Gromov.
+    Wrapper for visualiing the quadruples that maximize the measure of Gromov hyperbolicity.
     """
+    if len(quadruples) > max_to_draw:
+        print(f"Too many quadruples to visualize ({len(quadruples)}), showing only the first {max_to_draw}.")
+        quadruples = quadruples[:max_to_draw]
     graphs = [G] * len(quadruples)
     poses = [pos] * len(quadruples)
     titles = [f"Quadruple {q}" for q in quadruples]
