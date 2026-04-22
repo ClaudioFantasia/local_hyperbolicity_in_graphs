@@ -74,7 +74,7 @@ def draw_graphs(graphs, poses, titles=None,
     return fig, axes
 
 
-def draw_quadruples(G, pos, quadruples, max_to_draw=9):
+def draw_quadruples(G, pos, quadruples, max_to_draw=9, base_figsize=(6,6)):
     """
     Wrapper for visualiing the quadruples that maximize the measure of Gromov hyperbolicity.
     """
@@ -92,6 +92,7 @@ def draw_quadruples(G, pos, quadruples, max_to_draw=9):
         graphs, poses, 
         titles=titles, 
         highlight_nodes=highlight_nodes,
+        base_figsize=base_figsize
     )
 
 

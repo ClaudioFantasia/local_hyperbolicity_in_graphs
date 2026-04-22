@@ -25,7 +25,8 @@ def compute_distance_nodes(G):
 
     return dist
 
-def compute_delta_gromov(dist_matrix, x, y, z, w):
+def compute_delta_gromov(dist_matrix, quad):
+    x, y, z, w = quad
     d01, d23 = dist_matrix[x, y], dist_matrix[z, w]
     d02, d13 = dist_matrix[x, z], dist_matrix[y, w]
     d03, d12 = dist_matrix[x, w], dist_matrix[y, z]
@@ -33,6 +34,27 @@ def compute_delta_gromov(dist_matrix, x, y, z, w):
     s = [d01 + d23, d02 + d13, d03 + d12]
     s.sort(reverse=True)
     return (s[0] - s[1]) / 2.0
+
+def compute_gromov_hyperbolicity(G):
+    """
+    Compute Gromov hyperbolicity from a graph.
+    """   
+    dist_matrix = compute_distance_nodes(G)
+    nodes = list(G.nodes())
+    deltas = {}
+
+    for x, y, z, w in itertools.combinations(nodes,4):
+        quad = (x,y,z,w)
+        deltas[quad] = compute_delta_gromov(dist_matrix, quad)
+    
+    max_delta = max(deltas.values())
+    return max_delta, deltas
+
+
+def compute_intra_distance(dists,quad):
+    return np.mean([dists[quad[i]][quad[j]] for i in range(4) for j in range(i+1, 4)])
+
+
 
 def compute_gromov_on_graph(G,return_history=False, return_mean=False):
     """
@@ -48,7 +70,7 @@ def compute_gromov_on_graph(G,return_history=False, return_mean=False):
             return delta_max, delta_mean
         return delta_max
 
-def compute_gromov_hyperbolicity(dist_matrix, return_history=False):
+def OLD_compute_gromov_hyperbolicity(dist_matrix, return_history=False):
     n = dist_matrix.shape[0]
 
     max_delta = -np.inf
@@ -109,6 +131,10 @@ def compute_gromov_hyperbolicity_not_optimized(dist_matrix):
         deltas.append(delta)
 
     return np.max(deltas), np.mean(deltas)
+
+#############
+#################################
+#############
 
 def best_edge_for_gromov_optimization(G, current_gromov,candidate_to_add, candidate_to_remove, target):
     """

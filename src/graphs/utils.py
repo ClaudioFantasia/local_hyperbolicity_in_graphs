@@ -1,6 +1,9 @@
 import networkx as nx
 import numpy as np
 import pickle
+
+seed = 42
+
 def create_graph(type, **kwargs):
     """
     Just a wrapper 
@@ -25,13 +28,23 @@ def create_graph(type, **kwargs):
     else:
         raise ValueError(f"Unknown graph type: {type}")
     return G 
-    
+
+def create_SBM_graph(sizes, p_intra, p_inter=0.01, custom_p=None):
+    n_blocks = len(sizes)
+    if custom_p is not None:
+        p_matrix = custom_p
+    else:
+        p_matrix = np.full((n_blocks, n_blocks), p_inter)
+        for i in range(n_blocks):
+                p_matrix[i, i] = p_intra[i]
+    return nx.stochastic_block_model(sizes, p_matrix.tolist())
+
 def create_star_graph(n):
     G =  nx.star_graph(n-1) 
     return G 
 
 def create_tree_graph(n):
-    G = nx.random_labeled_tree(n, seed=42)
+    G = nx.random_labeled_tree(n, seed=seed)
     return G 
 
 def create_cycle_graph(n):
@@ -47,7 +60,7 @@ def create_complete_graph(n):
     return G
 
 def create_erdos_renyi_graph(n, p):
-    G = nx.erdos_renyi_graph(n, p, seed=42)
+    G = nx.erdos_renyi_graph(n, p, seed=seed)
     return G
 
 def create_lattice_graph(n,m):
