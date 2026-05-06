@@ -1,7 +1,6 @@
 import networkx as nx
 import numpy as np
 import pickle
-
 seed = 42
 
 def create_graph(type, **kwargs):

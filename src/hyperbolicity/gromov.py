@@ -38,6 +38,10 @@ def compute_delta_gromov(dist_matrix, quad):
 def compute_gromov_hyperbolicity(G):
     """
     Compute Gromov hyperbolicity from a graph.
+
+    Return:
+    max_delta: scalar -> maximum of deltas (i.e. Gromov hyperbolicity)
+    deltas: dict -> dictionary of quads and their deltas
     """   
     dist_matrix = compute_distance_nodes(G)
     nodes = list(G.nodes())
@@ -56,19 +60,6 @@ def compute_intra_distance(dists,quad):
 
 
 
-def compute_gromov_on_graph(G,return_history=False, return_mean=False):
-    """
-    Compute Gromov hyperbolicity from a graph.
-    """
-    dist_matrix = compute_distance_nodes(G)
-    delta_max, delta_mean, quadruples = compute_gromov_hyperbolicity(dist_matrix, return_history=True)
-
-    if return_history:
-        return delta_max, delta_mean, quadruples
-    else:
-        if return_mean:
-            return delta_max, delta_mean
-        return delta_max
 
 def OLD_compute_gromov_hyperbolicity(dist_matrix, return_history=False):
     n = dist_matrix.shape[0]

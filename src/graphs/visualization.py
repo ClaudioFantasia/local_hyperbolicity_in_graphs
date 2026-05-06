@@ -2,9 +2,20 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import math
 
+def plot_hist(x, title=None, xlabel=None, ylabel=None, bins=50):
+    plt.figure(figsize=(6, 6))
+    plt.hist(x, bins=bins, color='skyblue', edgecolor='black', log=True)
+    if title: plt.title(title)
+    if xlabel: plt.xlabel(xlabel)
+    if ylabel: plt.ylabel(ylabel)
+    plt.grid(axis='y', alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+
 def draw_layout(G, type = 'spring', pos = None, seed = 42):
     """
-    Creating the 'pos' to run draw_graph
+    Creating the 'pos' to run draw_graphs
     """
     if type == 'spring':
         pos = nx.spring_layout(G, pos=pos, seed=seed)
@@ -72,6 +83,23 @@ def draw_graphs(graphs, poses, titles=None,
     plt.tight_layout()
     plt.show()
     return fig, axes
+
+
+def draw_graph_with_values(G, pos, values, title=None, cmap=plt.cm.Reds, figsize=(8, 6), node_size=500):
+    """
+    Disegna un grafo singolarmente colorando i nodi in base a dei valori continui (es. diffusione),
+    includendo una barra dei colori (colorbar).
+    """
+    plt.figure(figsize=figsize)
+    nodes = nx.draw_networkx_nodes(G, pos, node_color=values, cmap=cmap, node_size=node_size)
+    nx.draw_networkx_edges(G, pos, edge_color="gray", alpha=0.7)
+    nx.draw_networkx_labels(G, pos, font_size=10)
+    
+    plt.colorbar(nodes, label="Value")
+    if title:
+        plt.title(title)
+    plt.axis("off")
+    plt.show()
 
 
 def draw_quadruples(G, pos, quadruples, deltas, max_to_draw=9, base_figsize=(6,6)):
