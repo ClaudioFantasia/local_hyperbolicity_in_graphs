@@ -163,3 +163,21 @@ def make_tree_of_cycles(cycle_size, n_cycles, branching=2, tree_height=2):
         offset += cycle_size
 
     return G, metadata
+
+def make_tree_with_grid():
+    # ── 1. Grid (low hyperbolicity / high delta) ──────────────────────────────────
+    grid = nx.grid_2d_graph(4, 4)
+    grid = nx.relabel_nodes(grid, {node: i for i, node in enumerate(grid.nodes())})
+    n_grid = grid.number_of_nodes()  # 16 nodes → IDs 0..15
+
+    # ── 2. Tree (high hyperbolicity / delta = 0) ──────────────────────────────────
+    tree = nx.balanced_tree(r=2, h=3)
+    # Shift tree IDs to start right after grid IDs 
+    tree = nx.relabel_nodes(tree, {n: n + n_grid for n in tree.nodes()})
+
+    # ── 3. Compose and bridge ─────────────────────────────────────────────────────
+    hybrid = nx.compose(grid, tree)
+    bridge_grid_node = 0          # corner of the grid
+    bridge_tree_node = n_grid     # root of the tree (was 0, now n_grid)
+    hybrid.add_edge(bridge_grid_node, bridge_tree_node)
+    return hybrid

@@ -13,6 +13,15 @@ def solve_l2_regularization(cost_vector, compared_distribution, lambda_reg):
     sol = project_to_simplex(sol)
     return sol 
 
+def solve_pgd_l2_regularization(x0, u, gromov_energy, lambda_reg = 0.5, max_steps = 10):
+    xk = np.copy(x0)
+    lipschitz = 2
+    step_rate = 1 / lipschitz
+    for _ in range(max_steps):
+        grad = gromov_energy - 2 * lambda_reg (xk - u)
+        xk = project_to_simplex(xk + step_rate * grad)
+    return xk
+
 def solve_KL_regularization(cost_vector, compared_distribution, T):
     compared_distribution = np.clip(compared_distribution, 1e-16 , None)
     return softmax(np.log(compared_distribution) + cost_vector / T)

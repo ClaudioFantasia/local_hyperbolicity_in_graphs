@@ -89,3 +89,6 @@ def negEntropy_regularization(x, temperature):
 
 def l2_regularization(x, lambda_reg):
     return lambda_reg * 0.5 * (x**2)
+
+def KL_divergence(x, y, temperature, eps = 1e-16):
+    return temperature * x * np.log(x / (y + eps))
