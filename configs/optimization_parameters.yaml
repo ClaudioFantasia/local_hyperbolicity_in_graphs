@@ -5,5 +5,5 @@ optimization:
   temperature: 0.01
   alpha_diffusion: 2
   time : 5
-  lambda_reg: 1000
+  lambda_reg: 2
   localized_nodes : [16]

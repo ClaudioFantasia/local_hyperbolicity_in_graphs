@@ -102,7 +102,7 @@ def draw_graph_with_values(G, pos, values, title=None, cmap=plt.cm.Reds, figsize
     plt.show()
 
 
-def draw_quadruples(G, pos, quadruples, deltas, max_to_draw=9, base_figsize=(6,6)):
+def draw_quadruples(G, pos, quadruples, deltas, mu_values, max_to_draw=9, base_figsize=(6,6)):
     """
     Wrapper for visualiing the quadruples that maximize the measure of Gromov hyperbolicity.
     """
@@ -112,7 +112,7 @@ def draw_quadruples(G, pos, quadruples, deltas, max_to_draw=9, base_figsize=(6,6
         deltas = deltas[:max_to_draw]
     graphs = [G] * len(quadruples)
     poses = [pos] * len(quadruples)
-    titles = [f"Quadruple {q} : {delta}" for q,delta in zip(quadruples,deltas)]
+    titles = [f"Quadruple {q} : {delta} - ({mu})" for q,delta,mu in zip(quadruples,deltas, mu_values)]
     
     highlight_nodes = [list(q) for q in quadruples]
     

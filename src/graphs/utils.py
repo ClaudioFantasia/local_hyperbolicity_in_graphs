@@ -67,6 +67,12 @@ def create_lattice_graph(n,m):
     G = nx.convert_node_labels_to_integers(G)
     return G
 
+def create_geometric_graph(n,radius,dim=2, seed=42):
+    G = nx.random_geometric_graph(n=n, radius=radius, dim=dim, seed=seed)
+    pos = {node[0]: node[1]['pos'] for node in G.nodes(data=True)}
+    return G,pos 
+
+
 def add_nodes(G, nodes):
     G.add_nodes_from(nodes)
     return G
@@ -164,14 +170,14 @@ def make_tree_of_cycles(cycle_size, n_cycles, branching=2, tree_height=2):
 
     return G, metadata
 
-def make_tree_with_grid():
+def make_tree_with_grid(height_tree, leaves_per_node, size_grid):
     # ── 1. Grid (low hyperbolicity / high delta) ──────────────────────────────────
-    grid = nx.grid_2d_graph(4, 4)
+    grid = nx.grid_2d_graph(size_grid, size_grid)
     grid = nx.relabel_nodes(grid, {node: i for i, node in enumerate(grid.nodes())})
     n_grid = grid.number_of_nodes()  # 16 nodes → IDs 0..15
 
     # ── 2. Tree (high hyperbolicity / delta = 0) ──────────────────────────────────
-    tree = nx.balanced_tree(r=2, h=3)
+    tree = nx.balanced_tree(r=leaves_per_node, h=height_tree)
     # Shift tree IDs to start right after grid IDs 
     tree = nx.relabel_nodes(tree, {n: n + n_grid for n in tree.nodes()})
 

@@ -3,6 +3,9 @@ from scipy.linalg import expm
 import numpy as np
 from scipy.sparse.linalg import factorized
 
+def data_fidelity(type):
+    return 0
+
 def gromov_energy(quads, dist_matrix):
     E = np.zeros(shape = (len(quads)))
     for i, quad in enumerate(quads):
@@ -44,7 +47,7 @@ def local_weights_distance_based(quads, localized_nodes, dist_matrix):
     weights = np.zeros(len(quads))
     for cnt, quad in enumerate(quads):
         weights[cnt] = np.mean(dist_matrix[np.ix_(quad,localized_nodes)])
-    weights = weights / np.sum(weights)
+    #weights = weights / np.sum(weights)
     return weights
 
 def diffuse_signal_denoising_solve(quads, L, alpha):
