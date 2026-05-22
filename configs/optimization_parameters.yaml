@@ -2,8 +2,8 @@ graph:
   type: "cycle"
   n: 50
 optimization:
-  temperature: 0.01
+  temperature: 0.05
   alpha_diffusion: 2
   time : 5
-  lambda_reg: 2
+  lambda_reg: 1
   localized_nodes : [16]

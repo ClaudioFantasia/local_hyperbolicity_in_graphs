@@ -1,78 +1,69 @@
-from src.optimization.solver import *
-from src.optimization.objectives import *
-import numpy as np
+import itertools, os, time
 import networkx as nx
-import itertools
-import matplotlib.pyplot as plt
-from src.graphs.visualization import *
-from src.graphs.utils import compute_distance_nodes
-from src.graphs.visualization import plot_hist
-from src.hyperbolicity.gromov import compute_gromov_hyperbolicity
-import yaml 
+import numpy as np
+import yaml
 
-# ==========================================
-# Defining graph structure
-# ==========================================
-G = nx.random_geometric_graph(n=50, radius=0.35, dim=2, seed=42)
-pos = {node[0]: node[1]['pos'] for node in G.nodes(data=True)}
+from src.graphs.utils import compute_distance_nodes, make_tree_of_cycles, make_tree_with_grid, create_SBM_graph
+from src.graphs.visualization import draw_graphs, draw_graph_with_values, plot_hist, draw_layout
+from src.optimization.objectives import gromov_energy, normalize
+from src.optimization.solver import solve_entropic_regularization
 
-def get_opt_pm():
-    with open("configs/optimization_parameters.yaml", "r") as file:
-        config = yaml.safe_load(file)
-    config = config['optimization']
-    return config['temperature'],config['alpha_diffusion'],config['time'],config['localized_nodes'],config['lambda_reg']
-temperature,alpha_diffusion,time,localized_nodes,lambda_reg = get_opt_pm()
-print(f"The parameters that I am using are {get_opt_pm()}")
-G = nx.cycle_graph(n=50)
+
+def load_config(path="configs/optimization_parameters.yaml"):
+    cfg = yaml.safe_load(open(path))["optimization"]
+    return cfg["temperature"], cfg["lambda_reg"]
+
+
+def precompute_energies(nodes, dist_matrix):
+    quads = list(itertools.combinations(nodes, 4))
+    energies = gromov_energy(quads, dist_matrix)
+    print(f"Global Gromov hyperbolicity: {np.max(energies):.4f}")
+    return dict(zip(quads, energies))
+
+
+def local_score(target, dist_matrix, quad_energy, k, temperature, lambda_reg):
+    print(f'Analyzing {target} node')
+    neighborhood = np.where(dist_matrix[target] <= k)[0]
+    quads = list(itertools.combinations(neighborhood, 4))
+    if not quads:
+        return 0.0
+
+    e_gromov = normalize(np.array([quad_energy[q] for q in quads]))
+    w_local  = normalize(np.mean(dist_matrix[np.array(quads), target], axis=1))
+
+    cost = e_gromov - lambda_reg * w_local
+    mu   = solve_entropic_regularization(cost, temperature)
+    return float(np.sum(mu * cost - temperature * mu * np.log(mu)))
+
+
+# --- Config & graph ---
+temperature, lambda_reg = load_config()
+k = 4
+
+
+G = create_SBM_graph(sizes=[35,35,35],p_intra=[0.4,0.4,0.4],p_inter=0.001)
 pos = draw_layout(G)
-#draw_graphs(G, pos)
-#G.remove_edge(48,49)
+
+G = nx.random_geometric_graph(n=200, radius=0.2, seed=4)
+pos = {n: d["pos"] for n, d in G.nodes(data=True)}
+
+kind = 'tmp'
 
 
-nodes_list = list(G.nodes())
-quads = list(itertools.combinations(nodes_list, 4))
-L = nx.normalized_laplacian_matrix(G).toarray()
+draw_graphs(G, pos)
+
+# --- Precompute ---
+nodes       = sorted(G.nodes())
 dist_matrix = compute_distance_nodes(G)
+quad_energy = precompute_energies(nodes, dist_matrix)
 
-max_delta, _ = compute_gromov_hyperbolicity(G)
-print(f"Global gromov hyperbolicity: {max_delta}")
+# --- Main loop ---
+t0     = time.perf_counter()
+scores = np.array([local_score(n, dist_matrix, quad_energy, k, temperature, lambda_reg) for n in nodes])
+print(f"{k}-hop done in {time.perf_counter() - t0:.2f}s")
 
-# ==========================================
-# 1. COSTRUZIONE DEI PEZZETTINI MATEMATICI
-# ==========================================
-E_gromov = gromov_energy(quads, dist_matrix)
-#W_local  = local_weights_distance_based(quads, localized_nodes, dist_matrix)
-W_local = local_weights_distance_based(quads, localized_nodes, dist_matrix)
-E_gromov = normalize(E_gromov)
-W_local = normalize(W_local)
-D_energy = distance_energy(quads, dist_matrix) 
-"""
-W_local = np.zeros(len(quads))
-for quad in quads:
-    if any(x in quad for x in [16]):
-        W_local[list(quad)] = 1
-W_local /= np.sum(W_local)
-"""
-
-print(f"Mean local weights: {np.mean(W_local)}")
-print(f"Var  local weights: {np.var(W_local)}")
-
-# ==========================================
-# 2. COMPOSIZIONE DELL'OBIETTIVO
-# ==========================================
-cost_vector = E_gromov + lambda_reg * W_local
-
-# ==========================================
-# 3. SOLUZIONE E VALUTAZIONE
-# ==========================================
-mu = solve_entropic_regularization(cost_vector, temperature)
-
-print(f"Per curiosita la prima parte e: {np.sum(mu *cost_vector)}")
-print(f"la seconda parte e: {temperature * np.sum(mu * np.log(mu))}")
-
-cost_function_val = np.sum(mu * cost_vector  - temperature * mu * np.log(mu))
-print(f"La cost function e': {cost_function_val}")
-
-plot_hist(W_local, title=f"Local weights (Mean={np.mean(W_local):.4f}, Var={np.var(W_local):.4f})", bins=50)
-plot_hist(mu, title="$\\mu$ distribution (Entropic Solution)")
-
+# --- Visualize ---
+save_path = os.path.join('data','figures',kind,f"{k}_hop_{time.perf_counter() - t0:.2f}s.png")
+os.makedirs(os.path.join('data','figures',kind),exist_ok=True)
+draw_graph_with_values(G, pos, scores, title="Local Hyperbolicity Heatmap", save_path=save_path)
+plot_hist(scores, title=f"Local Hyperbolicity (mean={scores.mean():.4f}, var={scores.var():.4f})", bins=20)

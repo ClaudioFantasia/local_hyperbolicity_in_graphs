@@ -85,7 +85,7 @@ def draw_graphs(graphs, poses, titles=None,
     return fig, axes
 
 
-def draw_graph_with_values(G, pos, values, title=None, cmap=plt.cm.Reds, figsize=(8, 6), node_size=500):
+def draw_graph_with_values(G, pos, values, title=None, cmap=plt.cm.Reds, figsize=(8, 6), node_size=500, save_path=None):
     """
     Disegna un grafo singolarmente colorando i nodi in base a dei valori continui (es. diffusione),
     includendo una barra dei colori (colorbar).
@@ -99,6 +99,8 @@ def draw_graph_with_values(G, pos, values, title=None, cmap=plt.cm.Reds, figsize
     if title:
         plt.title(title)
     plt.axis("off")
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
     plt.show()
 
 
