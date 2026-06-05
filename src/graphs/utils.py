@@ -1,19 +1,20 @@
 import networkx as nx
 import numpy as np
 import pickle
-seed = 42
-
+from src.graphs.visualization import draw_layout
 def create_graph(type, **kwargs):
     """
-    Just a wrapper 
+    Universal graph creator using keyword arguments (e.g. from yaml)
     """
     n = kwargs.get('n', 10)
     p = kwargs.get('p', 0.1)
-
+    pos = None
     if type == 'star':
         G = create_star_graph(n)
     elif type == 'tree':
-        G = create_tree_graph(n)
+        leaves_per_node = kwargs.get('leaves_per_node', 2)
+        tree_height = kwargs.get('tree_height', 4)
+        G = nx.balanced_tree(leaves_per_node,tree_height)
     elif type == 'cycle':
         G = create_cycle_graph(n)
     elif type == 'path':
@@ -23,10 +24,32 @@ def create_graph(type, **kwargs):
     elif type == 'erdos_renyi':
         G = create_erdos_renyi_graph(n, p)
     elif type == 'lattice':
-        G = create_lattice_graph(n)
+        m = kwargs.get('m', n)
+        G = create_lattice_graph(n, m)
+    elif type == 'sbm':
+        sizes = kwargs.get('sizes')
+        p_intra = kwargs.get('p_intra')
+        p_inter = kwargs.get('p_inter', 0.01)
+        G = create_SBM_graph(sizes, p_intra, p_inter)
+    elif type == 'geometric':
+        radius = kwargs.get('geometric_radius', 0.2)
+        G, pos = create_geometric_graph(n, radius)
+    elif type == 'tree_of_cycles':
+        cycle_size = kwargs.get('cycle_size', 8)
+        n_cycles = kwargs.get('n_cycles', 4)
+        branching = kwargs.get('leaves_per_node', 3)
+        tree_height = kwargs.get('tree_height', 2)
+        G, _ = make_tree_of_cycles(cycle_size, n_cycles, branching, tree_height)
+    elif type == 'tree_with_grid':
+        tree_height = kwargs.get('tree_height', 2)
+        leaves_per_node = kwargs.get('leaves_per_node', 3)
+        size_grid = kwargs.get('size_grid', 4)
+        G = make_tree_with_grid(tree_height, leaves_per_node, size_grid)
     else:
         raise ValueError(f"Unknown graph type: {type}")
-    return G 
+    if pos is None:
+        pos = draw_layout(G, seed=42)
+    return G, pos
 
 def create_SBM_graph(sizes, p_intra, p_inter=0.01, custom_p=None, seed=42):
     n_blocks = len(sizes)
@@ -43,7 +66,7 @@ def create_star_graph(n):
     return G 
 
 def create_tree_graph(n):
-    G = nx.random_labeled_tree(n, seed=seed)
+    G = nx.random_labeled_tree(n)
     return G 
 
 def create_cycle_graph(n):
@@ -58,7 +81,7 @@ def create_complete_graph(n):
     G = nx.complete_graph(n)
     return G
 
-def create_erdos_renyi_graph(n, p):
+def create_erdos_renyi_graph(n, p, seed=42):
     G = nx.erdos_renyi_graph(n, p, seed=seed)
     return G
 
@@ -72,38 +95,6 @@ def create_geometric_graph(n,radius,dim=2, seed=42):
     pos = {node[0]: node[1]['pos'] for node in G.nodes(data=True)}
     return G,pos 
 
-
-def add_nodes(G, nodes):
-    G.add_nodes_from(nodes)
-    return G
-
-def add_edges(G, edges):
-    """
-    edges is a list of tuple 
-    """
-    for u, v in edges:
-        if not G.has_edge(u, v):
-            G.add_edge(u, v)
-    return G
-
-def remove_edges(G, edges):
-    """
-    edges is a list of tuple 
-    """
-    for u, v in edges:
-        if G.has_edge(u, v):
-            G.remove_edge(u, v)
-    return G
-
-def add_n_arbitrary_nodes(G, n):
-    """
-    It add n nodes without any specific labels. It return a graph.
-    Just a function for faster experiments. 
-    """
-    len_graph = len(G)
-    nodes = list(range(len_graph,len_graph+n))
-    G = add_nodes(G,nodes)
-    return G 
 
 def compute_distance_nodes(G):
     """

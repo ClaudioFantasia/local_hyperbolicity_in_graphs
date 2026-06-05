@@ -2,21 +2,37 @@ from src.hyperbolicity.gromov import *
 from scipy.linalg import expm
 import numpy as np
 from scipy.sparse.linalg import factorized
+from scipy.special import softmax
 
 def data_fidelity(type):
     return 0
 
-def gromov_energy(quads, dist_matrix):
+def old_gromov_energy(quads, dist_matrix):
     E = np.zeros(shape = (len(quads)))
     for i, quad in enumerate(quads):
         E[i] = compute_delta_gromov(dist_matrix,quad)
     return E
+
+def gromov_energy(quads, dist_matrix):
+    q = np.array(quads)          # (N, 4)
+    x, y, z, w = q[:,0], q[:,1], q[:,2], q[:,3]
+
+    s0 = dist_matrix[x, y] + dist_matrix[z, w]
+    s1 = dist_matrix[x, z] + dist_matrix[y, w]
+    s2 = dist_matrix[x, w] + dist_matrix[y, z]
+
+    top2 = np.sort(np.stack([s0, s1, s2], axis=1), axis=1)  # (N, 3)
+    return (top2[:, 2] - top2[:, 1]) / 2.0
 
 def distance_energy(quads, dist_matrix):
     P = np.zeros(shape = (len(quads)))
     for i, quad in enumerate(quads):
         P[i] = compute_intra_distance(dist_matrix, quad)
     return P 
+
+def exp_distance_energy(distance_energy, geometry_temperature = 1):
+    return softmax(-distance_energy / geometry_temperature)
+
 
 def spectral_energy(quads, L, alpha_diffusion):
     E = np.zeros(len(quads))
@@ -94,4 +110,5 @@ def l2_regularization(x, lambda_reg):
     return lambda_reg * 0.5 * (x**2)
 
 def KL_divergence(x, y, temperature, eps = 1e-16):
+    #x_safe = np.clip(x, eps, None)
     return temperature * x * np.log(x / (y + eps))

@@ -35,6 +35,8 @@ def compute_delta_gromov(dist_matrix, quad):
     s.sort(reverse=True)
     return (s[0] - s[1]) / 2.0
 
+
+
 def compute_gromov_hyperbolicity(G):
     """
     Compute Gromov hyperbolicity from a graph.
