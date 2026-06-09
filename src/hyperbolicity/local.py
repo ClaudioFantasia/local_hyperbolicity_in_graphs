@@ -59,7 +59,6 @@ def score_KL_divergence(target, dist_matrix, quad_cache, k, temperature, geometr
     e_gromov = np.array([quad_cache[q] for q in quads])
 
     mu = solve_KL_regularization(e_gromov, w_local, temperature)
-
     return float(np.sum(mu * e_gromov - KL_divergence(mu, w_local, temperature)))
 
 
