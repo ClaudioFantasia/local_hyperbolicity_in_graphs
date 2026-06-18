@@ -41,7 +41,7 @@ def score_softmax(target, dist_matrix, quad_energy, k, temperature):
     return float(np.sum(e_gromov * weights))
 
 
-def score_KL_divergence(target, dist_matrix, quad_cache, k, temperature, geometry_temperature = 1):
+def score_KL_divergence(target, dist_matrix, quad_cache, k, temperature):
     neighborhood = np.where(dist_matrix[target] <= k)[0]
     quads = list(itertools.combinations(neighborhood, 4))
     if not quads:
@@ -54,7 +54,7 @@ def score_KL_divergence(target, dist_matrix, quad_cache, k, temperature, geometr
         quad_cache.update(zip(missing, energies))
 
     w_local = np.mean(dist_matrix[np.array(quads), target], axis=1)
-    w_local = softmax(-1 * w_local / geometry_temperature)
+    w_local = softmax(-1 * w_local)
 
     e_gromov = np.array([quad_cache[q] for q in quads])
 

@@ -2,7 +2,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import math
 
-def plot_hist(x, title=None, xlabel=None, ylabel=None, bins=50):
+def plot_hist(x, title=None, xlabel=None, ylabel=None, bins=50, save_path = None):
     plt.figure(figsize=(6, 6))
     plt.hist(x, bins=bins, color='skyblue', edgecolor='black', log=True)
     if title: plt.title(title)
@@ -10,6 +10,8 @@ def plot_hist(x, title=None, xlabel=None, ylabel=None, bins=50):
     if ylabel: plt.ylabel(ylabel)
     plt.grid(axis='y', alpha=0.3)
     plt.tight_layout()
+    if save_path is not None:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.show()
 
 

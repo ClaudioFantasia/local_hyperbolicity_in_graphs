@@ -8,6 +8,7 @@ def create_graph(type, **kwargs):
     """
     n = kwargs.get('n', 10)
     p = kwargs.get('p', 0.1)
+    seed = kwargs.get('seed', 42)
     pos = None
     if type == 'star':
         G = create_star_graph(n)
@@ -22,7 +23,7 @@ def create_graph(type, **kwargs):
     elif type == 'complete':
         G = create_complete_graph(n)
     elif type == 'erdos_renyi':
-        G = create_erdos_renyi_graph(n, p)
+        G = create_erdos_renyi_graph(n, p, seed)
     elif type == 'lattice':
         m = kwargs.get('m', n)
         G = create_lattice_graph(n, m)

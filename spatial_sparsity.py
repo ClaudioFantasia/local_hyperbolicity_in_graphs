@@ -9,7 +9,7 @@ import math
 
 
 from src.graphs.utils import compute_distance_nodes, create_graph
-from src.graphs.visualization import draw_graphs, draw_graph_with_values, plot_hist, draw_layout
+from src.graphs.visualization import draw_graphs, draw_graph_with_values, plot_hist, draw_layout, draw_quadruples
 from src.utils.config import load_optimization_config, load_graph_config
 from src.hyperbolicity.local import precompute_energies, score_KL_divergence
 from scipy.special import softmax
@@ -98,14 +98,13 @@ def main():
     temperature, lambda_reg, k, target = load_optimization_config()
 
     graph_cfg = load_graph_config()
-    #G, pos = create_graph(**graph_cfg)
+    G, pos = create_graph(**graph_cfg)
   
-    G = create_molecule_like_graph()
-    pos = draw_layout(G)
+    #G = create_molecule_like_graph()
+    #pos = draw_layout(G)
     
-
-
     print(nx.diameter(G))
+
 
     graph_type = graph_cfg['type']
     method_name = "KL_divergence"
@@ -128,6 +127,9 @@ def main():
 
     for quad, value in top_items:
         print(f"{quad}: {value}")
+
+    
+    
     # --- Main loop ---
     neighborhood = np.where(dist_matrix[target] <= k)[0]
     quads = list(itertools.combinations(neighborhood, 4))
@@ -156,10 +158,13 @@ def main():
     print(math.comb(len(nodes), 4))
 
     # --- Visualize ---
+    save_path = f'{target}_{k}_contributions.png'
     draw_graph_with_values(G, pos, node_contributions, title=f"Mu Heatmap with target:({target})", save_path=None)
-    plot_hist(mu, title=f"Node contributions (mean={mu.mean():.8f}, var={mu.var():.8f})", bins=20)
-    scores = np.array([score_KL_divergence(n, dist_matrix, quad_cache, k, temperature, geometry_temperature) for n in tqdm.tqdm(nodes, desc="Computing local scores")])
-    draw_graph_with_values(G, pos, scores, title=f"Local Hyperbolicity Heatmap ({method_name})", save_path=None)
+    save_path = f'{target}_{k}_mu.png'
+    plot_hist(mu, title=f"Mu distribution (mean={mu.mean():.8f}, var={mu.var():.8f})", bins=20, save_path=None)
+    scores = np.array([score_KL_divergence(n, dist_matrix, quad_cache, k, temperature) for n in tqdm.tqdm(nodes, desc="Computing local scores")])
+    save_path = f'{k}_hop_{temperature}_beta_cost_function.png'
+    draw_graph_with_values(G, pos, scores, title=f"Local Hyperbolicity Heatmap ({method_name})", save_path=save_path)
     plot_hist(scores, title=f"Local Hyperbolicity (mean={scores.mean():.8f}, var={scores.var():.8f})", bins=20)
 
 
