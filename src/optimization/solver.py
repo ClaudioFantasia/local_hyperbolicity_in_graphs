@@ -15,7 +15,7 @@ def solve_l2_regularization(cost_vector, compared_distribution, lambda_reg):
 
 def solve_pgd_l2_regularization(x0, u, gromov_energy, lambda_reg = 0.5, max_steps = 10):
     xk = np.copy(x0)
-    lipschitz = 2
+    lipschitz = 2 # it can be easily proved by taking the Hessian = 0
     step_rate = 1 / lipschitz
     for _ in range(max_steps):
         grad = gromov_energy - 2 * lambda_reg (xk - u)
@@ -42,7 +42,8 @@ def project_to_simplex(y):
 def projected_gradient_descent(cost_grad_func, x0, max_steps=10, step_size=0.25):
     """
     Generic PGD for simplex constraints.
-    cost_grad_func calcola il gradiente effettivo da massimizzare/minimizzare.
+    Note that this is for maximizing the obj function, so we have = stept_rate * grad
+    cost_grad_func compute the gradient of the cost function
     """
     xk = np.copy(x0)
     for _ in range(max_steps):

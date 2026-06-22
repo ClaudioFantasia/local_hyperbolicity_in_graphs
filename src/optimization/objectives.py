@@ -4,15 +4,6 @@ import numpy as np
 from scipy.sparse.linalg import factorized
 from scipy.special import softmax
 
-def data_fidelity(type):
-    return 0
-
-def old_gromov_energy(quads, dist_matrix):
-    E = np.zeros(shape = (len(quads)))
-    for i, quad in enumerate(quads):
-        E[i] = compute_delta_gromov(dist_matrix,quad)
-    return E
-
 def gromov_energy(quads, dist_matrix):
     q = np.array(quads)          # (N, 4)
     x, y, z, w = q[:,0], q[:,1], q[:,2], q[:,3]

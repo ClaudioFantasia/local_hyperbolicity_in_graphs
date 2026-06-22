@@ -2,13 +2,13 @@ import networkx as nx
 import numpy as np
 import pickle
 from src.graphs.visualization import draw_layout
-def create_graph(type, **kwargs):
+import random   
+def create_graph(type, seed = 42, **kwargs):
     """
     Universal graph creator using keyword arguments (e.g. from yaml)
     """
     n = kwargs.get('n', 10)
     p = kwargs.get('p', 0.1)
-    seed = kwargs.get('seed', 42)
     pos = None
     if type == 'star':
         G = create_star_graph(n)
@@ -31,10 +31,10 @@ def create_graph(type, **kwargs):
         sizes = kwargs.get('sizes')
         p_intra = kwargs.get('p_intra')
         p_inter = kwargs.get('p_inter', 0.01)
-        G = create_SBM_graph(sizes, p_intra, p_inter)
+        G = create_SBM_graph(sizes, p_intra, p_inter, seed)
     elif type == 'geometric':
         radius = kwargs.get('geometric_radius', 0.2)
-        G, pos = create_geometric_graph(n, radius)
+        G, pos = create_geometric_graph(n=n, radius=radius, seed=seed)
     elif type == 'tree_of_cycles':
         cycle_size = kwargs.get('cycle_size', 8)
         n_cycles = kwargs.get('n_cycles', 4)
@@ -46,13 +46,96 @@ def create_graph(type, **kwargs):
         leaves_per_node = kwargs.get('leaves_per_node', 3)
         size_grid = kwargs.get('size_grid', 4)
         G = make_tree_with_grid(tree_height, leaves_per_node, size_grid)
+    elif type == 'molecule_like':
+        G = create_molecule_graph()
+    elif type == 'herarchical':
+        tree_height = kwargs.get('tree_height',2)
+        leaves_per_node = kwargs.get('leaves_per_node',3)
+        random_edges_added = kwargs.get('random_edges_added',0)
+        G = create_hierarchical_graph(k=leaves_per_node,depth=tree_height,shortcuts=random_edges_added)
     else:
         raise ValueError(f"Unknown graph type: {type}")
     if pos is None:
         pos = draw_layout(G, seed=42)
     return G, pos
 
-def create_SBM_graph(sizes, p_intra, p_inter=0.01, custom_p=None, seed=42):
+def create_hierarchical_graph(k: int = 3, depth: int = 3, shortcuts: int = 6,
+                 seed: int = 42) -> nx.Graph:
+    """
+    Albero k-ario di profondità d con shortcut casuali tra foglie.
+
+    L'albero è perfettamente iperbolico (δ = 0), gli shortcut aumentano
+    δ in modo controllato. Permette di studiare come i cicli degradano
+    l'iperbolicità. Alzare 'shortcuts' da 0 gradualmente per calibrare.
+
+    Parametri:
+        k        : grado (numero di figli per nodo interno)
+        depth    : profondità dell'albero
+        shortcuts: archi casuali aggiunti tra foglie
+    """
+    rng = random.Random(seed)
+    G = nx.Graph()
+    idx = [0]
+    leaves = []
+
+    def build(parent, d):
+        if d == 0:
+            leaves.append(parent)
+            return
+        for _ in range(k):
+            child = idx[0] + 1
+            idx[0] = child
+            G.add_node(child)
+            G.add_edge(parent, child)
+            build(child, d - 1)
+
+    G.add_node(0)
+    build(0, depth)
+
+    for _ in range(shortcuts):
+        a = rng.choice(leaves)
+        b = rng.choice(leaves)
+        if a != b:
+            G.add_edge(a, b)
+
+    return G
+
+
+def create_molecule_graph():
+    # 1. Create the base components
+    tree_part = nx.balanced_tree(r=2, h=3)  # 15 nodes
+    main_path = nx.path_graph(16)           # Long backbone path (16 nodes)
+    cycle_part = nx.cycle_graph(8)          # 8 nodes
+    grid_part = nx.grid_2d_graph(4, 4)      # 16 nodes
+    
+    # 2. Join all of them disjointly to ensure sequential scalar IDs
+    G = nx.disjoint_union_all([tree_part, main_path, cycle_part, grid_part])
+    
+    # 3. Calculate starting indices for each component in the merged graph
+    tree_start = 0
+    path_start = len(tree_part)
+    cycle_start = path_start + len(main_path)
+    grid_start = cycle_start + len(cycle_part)
+    
+    # 4. Wire the "Molecule" structure together
+    
+    # A. Connect Tree to the beginning of the Main Path
+    G.add_edge(tree_start, path_start)
+    
+    # B. Connect Grid to the end of the Main Path
+    path_end = path_start + len(main_path) - 1
+    G.add_edge(path_end, grid_start)
+    
+    # C. Branch the Cycle off the center of the Main Path
+    path_middle = path_start + (len(main_path) // 2)
+    G.add_edge(path_middle, cycle_start)
+    
+    return G
+
+
+
+
+def create_SBM_graph(sizes, p_intra, p_inter=0.01, custom_p=None, seed = 42):
     n_blocks = len(sizes)
     if custom_p is not None:
         p_matrix = custom_p
