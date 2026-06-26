@@ -1,22 +1,26 @@
 graph:
-  type: "tree_of_cycles" 
-  # star,tree, cycle, path, complete, erodos_reyni, lattice
+  type: "complete" 
+  # star,tree, cycle, path, complete, erdos_reyni, lattice
   # sbm, geometric, tree_of_cycles, tree_with_grid
-  n : 120
-  p : 0.2 # Erdos-Reyni
-  sizes : [30,30] # SBM
+  # molecule_like, hierarchical
+  n : 12 
+  p : 0.1 # Erdos-Reyni
+  sizes : [40,40] # SBM
   p_intra : [0.3,0.3] # SBM 
-  p_inter : 0.002 # SBM
-  geometric_radius : 0.3 # random geometric
-  tree_height : 3 # tree with grid, tree of cycles
-  leaves_per_node : 2 # tree with grid, tree of cycles
+  p_inter : 0.001  # SBM
+  geometric_radius : 0.2 # random geometric
+  tree_height : 3 # tree with grid, tree of cycles, hierarchical
+  leaves_per_node : 2 # tree with grid, tree of cycles, hierarchical
   cycle_size : 8 # tree of cycles
   n_cycles : 4 # tree of cycles
   size_grid : 4 # tree with grid
+  random_edges_added : 0 # hierarchical 
 optimization:
   temperature: 0.1
-  lambda_reg: 1
+  geometric_temperature : 0.15
+  lambda_reg: 0.5
   alpha_diffusion: 2
+  sigma : 10
   time : 5
-  localized_nodes : [16]
-  k : 14
+  target_nodes : [0]
+  k : 5
