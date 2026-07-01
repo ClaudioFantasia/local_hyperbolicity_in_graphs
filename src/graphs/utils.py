@@ -31,7 +31,7 @@ def create_graph(type, seed = 42, **kwargs):
         sizes = kwargs.get('sizes')
         p_intra = kwargs.get('p_intra')
         p_inter = kwargs.get('p_inter', 0.01)
-        G = create_SBM_graph(sizes, p_intra, p_inter, seed)
+        G = create_SBM_graph(sizes=sizes, p_intra=p_intra, p_inter=p_inter, seed=seed)
     elif type == 'geometric':
         radius = kwargs.get('geometric_radius', 0.2)
         G, pos = create_geometric_graph(n=n, radius=radius, seed=seed)
@@ -48,7 +48,7 @@ def create_graph(type, seed = 42, **kwargs):
         G = make_tree_with_grid(tree_height, leaves_per_node, size_grid)
     elif type == 'molecule_like':
         G = create_molecule_graph()
-    elif type == 'herarchical':
+    elif type == 'hierarchical':
         tree_height = kwargs.get('tree_height',2)
         leaves_per_node = kwargs.get('leaves_per_node',3)
         random_edges_added = kwargs.get('random_edges_added',0)
