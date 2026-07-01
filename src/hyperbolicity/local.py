@@ -33,6 +33,7 @@ def _get_quads_and_energies(target, dist_matrix, quad_cache, k):
 
 def score_KL_divergence(target, dist_matrix, quad_cache, k, temperature, geometric_temperature):
     quads, e_gromov = _get_quads_and_energies(target, dist_matrix, quad_cache, k)
+    print(len(quads))
     if not quads:
         return np.zeros_like(np.atleast_1d(geometric_temperature), dtype=float)
     

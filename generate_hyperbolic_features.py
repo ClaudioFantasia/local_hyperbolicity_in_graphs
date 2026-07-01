@@ -61,7 +61,7 @@ A = nx.adjacency_matrix(G)
 dist_matrix = shortest_path(A)
 
 quad_cache = {}
-k = 4
+k = 2
 temperature = 0.1
 geometric_temperature = np.arange(0.1,5.5,0.25)
 
