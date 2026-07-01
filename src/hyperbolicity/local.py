@@ -34,7 +34,7 @@ def _get_quads_and_energies(target, dist_matrix, quad_cache, k):
 def score_KL_divergence(target, dist_matrix, quad_cache, k, temperature, geometric_temperature):
     quads, e_gromov = _get_quads_and_energies(target, dist_matrix, quad_cache, k)
     if not quads:
-        return 0.0
+        return np.zeros_like(np.atleast_1d(geometric_temperature), dtype=float)
     
     geometric_temperature = np.atleast_1d(geometric_temperature)  # shape (T,)
     
@@ -54,7 +54,7 @@ def score_KL_divergence(target, dist_matrix, quad_cache, k, temperature, geometr
     return V_star
 
 def score_KL_divergence_batched(target, dist_matrix, quad_cache, k, temperature,
-                                  geometric_temperature, batch_size=1_000_000):
+                                  geometric_temperature, batch_size=5_000_000):
     geometric_temperature = np.atleast_1d(geometric_temperature)
     T = geometric_temperature.shape[0]
 
@@ -96,7 +96,7 @@ def score_KL_divergence_batched(target, dist_matrix, quad_cache, k, temperature,
         m_den = new_m
 
     if total_quads == 0:
-        return 0.0
+        return np.zeros_like(np.atleast_1d(geometric_temperature), dtype=float)
 
     lse_num = m_num + np.log(s_num)
     lse_den = m_den + np.log(s_den)

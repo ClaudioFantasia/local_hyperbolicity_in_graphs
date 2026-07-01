@@ -61,7 +61,7 @@ A = nx.adjacency_matrix(G)
 dist_matrix = shortest_path(A)
 
 quad_cache = {}
-k = 2
+k = 4
 temperature = 0.1
 geometric_temperature = np.arange(0.1,5.5,0.25)
 
@@ -90,7 +90,7 @@ for node_id in tqdm(range(G.number_of_nodes())):
         continue
     if len(quad_cache) > 5_000_000:
         quad_cache = {}
-    result = score_KL_divergence_batched(node_id,dist_matrix,quad_cache,k,temperature,geometric_temperature)
+    result = score_KL_divergence(node_id,dist_matrix,quad_cache,k,temperature,geometric_temperature)
     
     # Save immediately
     with open(OUTPUT_FILE, 'a', newline='') as f:
