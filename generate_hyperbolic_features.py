@@ -84,13 +84,12 @@ else:
 print(f"Skipping {len(completed_nodes)} nodes already found in {OUTPUT_FILE}")
 
 # 2. Loop and save
-for node_id in tqdm(range(G.number_of_nodes())):
+for node_id in tqdm(range(1072,G.number_of_nodes())):
     # Skip if already computed
     if node_id in completed_nodes:
         continue
-    if len(quad_cache) > 5_000_000:
-        quad_cache = {}
-    result = score_KL_divergence(node_id,dist_matrix,quad_cache,k,temperature,geometric_temperature)
+
+    result = score_KL_divergence_batched(node_id,dist_matrix,quad_cache,k,temperature,geometric_temperature, batch_size=5_000_000)
     
     # Save immediately
     with open(OUTPUT_FILE, 'a', newline='') as f:

@@ -19,6 +19,7 @@ def gromov_energy(quads, dist_matrix):
 def _get_quads_and_energies(target, dist_matrix, quad_cache, k):
     """Helper to find neighborhood quads and batch-compute missing energies."""
     neighborhood = np.where(dist_matrix[target] <= k)[0]
+    print(len(neighborhood))
     quads = list(itertools.combinations(neighborhood, 4))
     if not quads:
         return quads, np.array([])
@@ -33,7 +34,6 @@ def _get_quads_and_energies(target, dist_matrix, quad_cache, k):
 
 def score_KL_divergence(target, dist_matrix, quad_cache, k, temperature, geometric_temperature):
     quads, e_gromov = _get_quads_and_energies(target, dist_matrix, quad_cache, k)
-    print(len(quads))
     if not quads:
         return np.zeros_like(np.atleast_1d(geometric_temperature), dtype=float)
     
@@ -61,13 +61,15 @@ def score_KL_divergence_batched(target, dist_matrix, quad_cache, k, temperature,
 
     neighborhood = np.where(dist_matrix[target] <= k)[0]
     quad_iter = itertools.combinations(neighborhood, 4)
-    print(len(neighborhood))
+
 
     m_num, s_num = np.full(T, -np.inf), np.zeros(T)   # numerator LSE state
     m_den, s_den = np.full(T, -np.inf), np.zeros(T)   # denominator LSE state
 
     total_quads = 0
     while True:
+        if len(quad_cache) > 10_000_005:
+            quad_cache = {}
         batch = list(itertools.islice(quad_iter, batch_size))
         if not batch:
             break
