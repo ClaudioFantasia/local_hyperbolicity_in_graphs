@@ -10,14 +10,12 @@ from scipy.special import softmax
 ###########################################
 
 def gromov_energy(quads, dist_matrix):
-    q = np.array(quads)          # (N, 4)
+    q = np.array(quads)
     x, y, z, w = q[:,0], q[:,1], q[:,2], q[:,3]
-
     s0 = dist_matrix[x, y] + dist_matrix[z, w]
     s1 = dist_matrix[x, z] + dist_matrix[y, w]
     s2 = dist_matrix[x, w] + dist_matrix[y, z]
-
-    top2 = np.sort(np.stack([s0, s1, s2], axis=1), axis=1)  # (N, 3)
+    top2 = np.sort(np.stack([s0, s1, s2], axis=1), axis=1)
     return (top2[:, 2] - top2[:, 1]) / 2.0
 
 def compute_gromov_hyperbolicity(G):
@@ -66,17 +64,14 @@ def compute_distance_nodes(G):
     nodes = list(G.nodes())
     index = {node: i for i, node in enumerate(nodes)}
     n = len(nodes)
-
     dist = np.full((n, n), np.inf)
 
     for u, lengths in nx.all_pairs_shortest_path_length(G):
         i = index[u]
         for v, d in lengths.items():
-            j = index[v]
-            dist[i, j] = d
+            dist[i, index[v]] = d
 
-    return dist
-
+    return dist, index
 
 
 

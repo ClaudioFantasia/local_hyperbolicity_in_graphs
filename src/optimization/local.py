@@ -4,59 +4,51 @@ from scipy.special import softmax, logsumexp
 from src.optimization.objectives import gromov_energy, compute_distance_nodes
 import networkx as nx
 
-def _get_neighborhood(G,target,k):
-    """
-    It gives you back the quads in the k-hop neighborhood and the dist_matrix
-    computed on the induced subgraph (distances only through paths within the neighborhood).
-    """
+def _get_neighborhood(G, target, k):
     lengths = nx.single_source_shortest_path_length(G, target, cutoff=k)
     neighborhood_nodes = list(lengths.keys())
-    # Induced subgraph on just these nodes
     subG = G.subgraph(neighborhood_nodes)
-
-    # Distances computed within the subgraph only
-    dist_matrix = compute_distance_nodes(subG)
-
-    return neighborhood_nodes, dist_matrix
+    dist_matrix, node_index = compute_distance_nodes(subG)
+    return neighborhood_nodes, dist_matrix, node_index
 
 def KL_score(quads, dist_matrix, target, temperature, geometric_temperature):
     w_local = np.mean(dist_matrix[np.array(quads), target], axis=1)  # shape (N,)
     gamma = softmax(-1 * w_local[:, None] / geometric_temperature[None, :], axis=0)
 
-
-def new_score_KL_divergence(G, target, quad_cache, k, temperature, geometric_temperature):
-    neighborhood, dist_matrix = _get_neighborhood(G,target,k)
+def new_score_KL_divergence(G, target, quad_cache, k, temperature, geometric_temperature, batch_size=1_000_000):
+    neighborhood, dist_matrix, node_index = _get_neighborhood(G, target, k)
 
     if len(neighborhood) < 4:
         return np.zeros_like(np.atleast_1d(geometric_temperature), dtype=float)
-    
-    quad_iter = itertools.combinations(neighborhood, 4)
 
-    geometric_temperature = np.atleast_1d(geometric_temperature)  # shape (T,)
-    w_local = np.mean(dist_matrix[np.array(quads), target], axis=1)  # shape (N,)
-    
+    geometric_temperature = np.atleast_1d(geometric_temperature)
+    target_idx = node_index[target]
+    quad_iter = itertools.combinations(neighborhood, 4)
     gammaexp_summation = 0
+
     while True:
         quads = list(itertools.islice(quad_iter, batch_size))
         if not quads:
             break
 
         ## DISTANCE DISTRIBUTION
-        w_local = np.mean(dist_matrix[np.array(quads), target], axis=1)  # shape (N,)
-        gamma = softmax(-1 * w_local[:, None] / geometric_temperature[None, :], axis=0)
+        q_idx = np.array([[node_index[n] for n in q] for q in quads])
+        w_local = dist_matrix[q_idx, target_idx].mean(axis=1)
+        gamma = softmax(-w_local[:, None] / geometric_temperature[None, :], axis=0)
 
-        ## GROMOV ENERGY
-        missing = [q for q in quads if q not in quad_cache]
+        ## GROMOV COMPUTATION
+        keys = [tuple(sorted(q)) for q in quads]
+        missing = [key for key in keys if key not in quad_cache]
         if missing:
-            energies = gromov_energy(missing, dist_matrix)
-            quad_cache.update(zip(missing, energies))
+            missing_idx = [[node_index[n] for n in q] for q in missing]
+            quad_cache.update(zip(missing, gromov_energy(missing_idx, dist_matrix)))
+        e_gromov = np.array([quad_cache[k] for k in keys])[:, None]
 
-        e_gromov = np.array([quad_cache[tuple(sorted(q))] for q in quads])
-        e_gromov = np.tile(np.asarray(e_gromov).reshape(-1, 1), (1, geometric_temperature.shape[0]))
 
-        ## SUMMATION
-        gammaexp_summation += gamma * np.exp(gromov_energy / temperature)
+        gammaexp_summation += (gamma * np.exp(e_gromov / temperature)).sum(axis=0)
+
     return temperature * np.log(gammaexp_summation)
+
 
 
 def _get_quads_and_energies(target, dist_matrix, quad_cache, k):
