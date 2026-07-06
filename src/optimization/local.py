@@ -1,19 +1,62 @@
 import numpy as np
 import itertools
 from scipy.special import softmax, logsumexp
+from src.optimization.objectives import gromov_energy, compute_distance_nodes
+import networkx as nx
+
+def _get_neighborhood(G,target,k):
+    """
+    It gives you back the quads in the k-hop neighborhood and the dist_matrix
+    computed on the induced subgraph (distances only through paths within the neighborhood).
+    """
+    lengths = nx.single_source_shortest_path_length(G, target, cutoff=k)
+    neighborhood_nodes = list(lengths.keys())
+    # Induced subgraph on just these nodes
+    subG = G.subgraph(neighborhood_nodes)
+
+    # Distances computed within the subgraph only
+    dist_matrix = compute_distance_nodes(subG)
+
+    return neighborhood_nodes, dist_matrix
+
+def KL_score(quads, dist_matrix, target, temperature, geometric_temperature):
+    w_local = np.mean(dist_matrix[np.array(quads), target], axis=1)  # shape (N,)
+    gamma = softmax(-1 * w_local[:, None] / geometric_temperature[None, :], axis=0)
 
 
+def new_score_KL_divergence(G, target, quad_cache, k, temperature, geometric_temperature):
+    neighborhood, dist_matrix = _get_neighborhood(G,target,k)
 
-def gromov_energy(quads, dist_matrix):
-    q = np.array(quads)          # (N, 4)
-    x, y, z, w = q[:,0], q[:,1], q[:,2], q[:,3]
+    if len(neighborhood) < 4:
+        return np.zeros_like(np.atleast_1d(geometric_temperature), dtype=float)
+    
+    quad_iter = itertools.combinations(neighborhood, 4)
 
-    s0 = dist_matrix[x, y] + dist_matrix[z, w]
-    s1 = dist_matrix[x, z] + dist_matrix[y, w]
-    s2 = dist_matrix[x, w] + dist_matrix[y, z]
+    geometric_temperature = np.atleast_1d(geometric_temperature)  # shape (T,)
+    w_local = np.mean(dist_matrix[np.array(quads), target], axis=1)  # shape (N,)
+    
+    gammaexp_summation = 0
+    while True:
+        quads = list(itertools.islice(quad_iter, batch_size))
+        if not quads:
+            break
 
-    top2 = np.sort(np.stack([s0, s1, s2], axis=1), axis=1)  # (N, 3)
-    return (top2[:, 2] - top2[:, 1]) / 2.0
+        ## DISTANCE DISTRIBUTION
+        w_local = np.mean(dist_matrix[np.array(quads), target], axis=1)  # shape (N,)
+        gamma = softmax(-1 * w_local[:, None] / geometric_temperature[None, :], axis=0)
+
+        ## GROMOV ENERGY
+        missing = [q for q in quads if q not in quad_cache]
+        if missing:
+            energies = gromov_energy(missing, dist_matrix)
+            quad_cache.update(zip(missing, energies))
+
+        e_gromov = np.array([quad_cache[tuple(sorted(q))] for q in quads])
+        e_gromov = np.tile(np.asarray(e_gromov).reshape(-1, 1), (1, geometric_temperature.shape[0]))
+
+        ## SUMMATION
+        gammaexp_summation += gamma * np.exp(gromov_energy / temperature)
+    return temperature * np.log(gammaexp_summation)
 
 
 def _get_quads_and_energies(target, dist_matrix, quad_cache, k):

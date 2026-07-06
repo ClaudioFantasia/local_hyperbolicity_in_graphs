@@ -25,16 +25,6 @@ def compute_distance_nodes(G):
 
     return dist
 
-def compute_delta_gromov(dist_matrix, quad):
-    x, y, z, w = quad
-    d01, d23 = dist_matrix[x, y], dist_matrix[z, w]
-    d02, d13 = dist_matrix[x, z], dist_matrix[y, w]
-    d03, d12 = dist_matrix[x, w], dist_matrix[y, z]
-
-    s = [d01 + d23, d02 + d13, d03 + d12]
-    s.sort(reverse=True)
-    return (s[0] - s[1]) / 2.0
-
 
 
 def compute_gromov_hyperbolicity(G):
@@ -60,70 +50,6 @@ def compute_gromov_hyperbolicity(G):
 def compute_intra_distance(dists,quad):
     return np.mean([dists[quad[i]][quad[j]] for i in range(4) for j in range(i+1, 4)])
 
-
-
-
-def OLD_compute_gromov_hyperbolicity(dist_matrix, return_history=False):
-    n = dist_matrix.shape[0]
-
-    max_delta = -np.inf
-    sum_delta = 0.0
-    count = 0
-    max_quadruples = []
-
-    for i, j, k, l in itertools.combinations(range(n), 4):
-        d01, d23 = dist_matrix[i, j], dist_matrix[k, l]
-        d02, d13 = dist_matrix[i, k], dist_matrix[j, l]
-        d03, d12 = dist_matrix[i, l], dist_matrix[j, k]
-
-        s = [d01 + d23, d02 + d13, d03 + d12]
-        s.sort(reverse=True) 
-        delta = (s[0] - s[1]) / 2.0
-        
-        sum_delta += delta
-        count += 1
-
-        if delta > max_delta:
-            max_delta = delta
-            if return_history:
-                max_quadruples = [(i, j, k, l)]
-        elif delta == max_delta and return_history:
-            max_quadruples.append((i, j, k, l))
-
-    mean_delta = sum_delta / count if count > 0 else 0.0
-
-    if return_history:
-        return max_delta, mean_delta, max_quadruples
-    return max_delta, mean_delta
-
-
-
-
-
-def compute_gromov_hyperbolicity_not_optimized(dist_matrix):
-    """
-    Compute Gromov hyperbolicity from a distance matrix.
-    """
-    n = dist_matrix.shape[0]
-    deltas = []
-    
-
-    for i, j, k, l in itertools.permutations(range(n), 4):
-        d01 = dist_matrix[i, j]
-        d23 = dist_matrix[k, l]
-        d02 = dist_matrix[i, k]
-        d13 = dist_matrix[j, l]
-        d03 = dist_matrix[i, l]
-        d12 = dist_matrix[j, k]
-
-        s = [d01 + d23, d02 + d13, d03 + d12]
-        
-        
-        delta = 0.5 * (s[0] - max(s[1], s[2]))
-
-        deltas.append(delta)
-
-    return np.max(deltas), np.mean(deltas)
 
 #############
 #################################

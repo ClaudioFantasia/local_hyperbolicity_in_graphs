@@ -89,8 +89,8 @@ def draw_graphs(graphs, poses, titles=None,
 
 def draw_graph_with_values(G, pos, values, title=None, cmap=plt.cm.Reds, figsize=(8, 6), node_size=500, save_path=None, vmin=None, vmax=None):
     """
-    Disegna un grafo singolarmente colorando i nodi in base a dei valori continui (es. diffusione),
-    includendo una barra dei colori (colorbar).
+    Draw a graph by individually coloring the nodes based on continuous values (e.g., diffusion),
+    including a color bar.
     """
     plt.figure(figsize=figsize)
     nodes = nx.draw_networkx_nodes(G, pos, node_color=values, cmap=cmap, node_size=node_size, vmin=vmin, vmax=vmax)

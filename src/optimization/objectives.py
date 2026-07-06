@@ -4,6 +4,11 @@ import numpy as np
 from scipy.sparse.linalg import factorized
 from scipy.special import softmax
 
+
+###########################################
+###         GROMOV
+###########################################
+
 def gromov_energy(quads, dist_matrix):
     q = np.array(quads)          # (N, 4)
     x, y, z, w = q[:,0], q[:,1], q[:,2], q[:,3]
@@ -14,6 +19,74 @@ def gromov_energy(quads, dist_matrix):
 
     top2 = np.sort(np.stack([s0, s1, s2], axis=1), axis=1)  # (N, 3)
     return (top2[:, 2] - top2[:, 1]) / 2.0
+
+def compute_gromov_hyperbolicity(G):
+    """
+    Compute Gromov hyperbolicity from a graph.
+
+    N.B. Be careful that we are allocating the full vector of quads. This code can run on maximum 300 nodes.
+    """   
+    dist_matrix = compute_distance_nodes(G)
+    nodes = list(G.nodes())
+    deltas = {}
+
+    quads = list(itertools.combinations(nodes,4))
+
+    deltas = gromov_energy(quads,dist_matrix)
+    
+    max_delta = np.max(deltas)
+    return max_delta
+
+###########################################
+###         UTILS
+###########################################
+
+def normalize(x):
+    den = np.max(x) - np.min(x)
+    if den != 0:
+        x = (x - np.min(x)) / den 
+    else: 
+        x = np.zeros(shape=np.shape(x))
+    return x  
+
+def negEntropy_regularization(x, temperature):
+    return temperature * x * np.log(x)
+
+def l2_regularization(x, lambda_reg):
+    return lambda_reg * 0.5 * (x**2)
+
+def KL_divergence(x, y, temperature, eps = 1e-16):
+    #x_safe = np.clip(x, eps, None)
+    return temperature * x * np.log(x / (y + eps))
+
+def compute_distance_nodes(G):
+    """
+    Compute the distances between nodes using shortest path as metric
+    """
+    nodes = list(G.nodes())
+    index = {node: i for i, node in enumerate(nodes)}
+    n = len(nodes)
+
+    dist = np.full((n, n), np.inf)
+
+    for u, lengths in nx.all_pairs_shortest_path_length(G):
+        i = index[u]
+        for v, d in lengths.items():
+            j = index[v]
+            dist[i, j] = d
+
+    return dist
+
+
+
+
+
+
+
+
+
+
+
 
 def distance_energy(quads, dist_matrix):
     P = np.zeros(shape = (len(quads)))
@@ -86,20 +159,4 @@ def diffuse_signal_heat_kernel(quads, L, time):
         results.append(x)
     return results
 
-def normalize(x):
-    den = np.max(x) - np.min(x)
-    if den != 0:
-        x = (x - np.min(x)) / den 
-    else: 
-        x = np.zeros(shape=np.shape(x))
-    return x  
 
-def negEntropy_regularization(x, temperature):
-    return temperature * x * np.log(x)
-
-def l2_regularization(x, lambda_reg):
-    return lambda_reg * 0.5 * (x**2)
-
-def KL_divergence(x, y, temperature, eps = 1e-16):
-    #x_safe = np.clip(x, eps, None)
-    return temperature * x * np.log(x / (y + eps))

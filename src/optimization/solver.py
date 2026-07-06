@@ -5,6 +5,7 @@ def solve_entropic_regularization(cost_vector, T=0.01):
     """
     maximization of the objective function 
     mu @ c - mu log(mu)
+    s.t \mu \in simplex of size n-1
     """
     return softmax(cost_vector / T)
 
