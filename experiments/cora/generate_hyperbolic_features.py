@@ -3,8 +3,9 @@ import csv
 import time
 import networkx as nx 
 import numpy as np
-
-from src.hyperbolicity.local import score_KL_divergence,score_KL_divergence_batched
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+from src.optimization.local import KL_score
 from src.graphs.visualization import draw_layout, draw_graphs
 from src.graphs.utils import create_graph
 from src.utils.config import load_optimization_config, load_graph_config
@@ -18,16 +19,10 @@ from torch_geometric.transforms import RandomLinkSplit
 from torch_geometric.utils import to_networkx, to_undirected
 
 from tqdm import tqdm
-TOTAL_CORA_NODES = 2708 
+
 OUTPUT_FILE = "cora_node_metrics.csv"
 
 
-
-
-def compute_metric_for_node(node_id):
-    # Your custom algorithm goes here
-    time.sleep(0.1) 
-    return f"metric_value_{node_id}"
 
 
 def build_nx_graph(edge_index, num_nodes):
@@ -41,7 +36,7 @@ def build_nx_graph(edge_index, num_nodes):
 
 def load_cora():
     """
-    Download Cora and load it as a networkX graph
+    Download Cora and load it as a networkX graph (largest connected component)
     """
     dataset = Planetoid(root="/tmp/Cora", name="Cora")
     data = dataset[0]
@@ -50,7 +45,15 @@ def load_cora():
     data.edge_index = to_undirected(data.edge_index)
     
     G = build_nx_graph(data.edge_index, data.num_nodes)
-    return G 
+
+    # Extract the largest connected component
+    largest_cc = max(nx.connected_components(G), key=len)
+    G = G.subgraph(largest_cc).copy()
+
+    # Relabel nodes to consecutive integers starting from 0
+    G = nx.convert_node_labels_to_integers(G, first_label=0)
+
+    return G
 
 
 G = load_cora()
@@ -61,9 +64,9 @@ A = nx.adjacency_matrix(G)
 dist_matrix = shortest_path(A)
 
 quad_cache = {}
-k = 2
+k = 4
 temperature = 0.1
-geometric_temperature = np.arange(0.1,5.5,0.25)
+geometric_temperature = np.arange(0.1,2.6,0.1)
 
 
 # 1. Check what has already been computed
@@ -84,13 +87,12 @@ else:
 print(f"Skipping {len(completed_nodes)} nodes already found in {OUTPUT_FILE}")
 
 # 2. Loop and save
-for node_id in tqdm(range(1072,G.number_of_nodes())):
+for node_id in tqdm(range(0,G.number_of_nodes())):
     # Skip if already computed
     if node_id in completed_nodes:
         continue
 
-    result = score_KL_divergence_batched(node_id,dist_matrix,quad_cache,k,temperature,geometric_temperature, batch_size=5_000_000)
-    
+    result = KL_score(G,node_id,quad_cache,k,temperature,geometric_temperature,dist_matrix)
     # Save immediately
     with open(OUTPUT_FILE, 'a', newline='') as f:
         writer = csv.writer(f)

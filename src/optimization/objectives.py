@@ -1,9 +1,9 @@
-from src.hyperbolicity.gromov import *
+
 from scipy.linalg import expm
 import numpy as np
 from scipy.sparse.linalg import factorized
 from scipy.special import softmax
-
+import networkx as nx
 
 ###########################################
 ###         GROMOV
@@ -59,7 +59,8 @@ def KL_divergence(x, y, temperature, eps = 1e-16):
 
 def compute_distance_nodes(G):
     """
-    Compute the distances between nodes using shortest path as metric
+    Compute the distances between nodes using shortest path as metric.
+    It return both the matrix and the index dictionary.
     """
     nodes = list(G.nodes())
     index = {node: i for i, node in enumerate(nodes)}
