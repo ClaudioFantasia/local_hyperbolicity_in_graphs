@@ -7,7 +7,7 @@ import random
 from math import comb
 
 SAMPLE_THRESHOLD = 200
-MAX_SAMPLES = comb(SAMPLE_THRESHOLD, 4)
+MAX_SAMPLES = comb(200,4)
 
 def get_neighborhood(G, target, k):
     """
@@ -30,23 +30,25 @@ def KL_score(G, target, quad_cache, k, temperature, geometric_temperature, dist_
     num_quads = comb(n, 4)
 
     if num_quads <= MAX_SAMPLES:
-        # exact
-        quads = itertools.combinations(neighborhood, 4)
+        quads = list(itertools.combinations(neighborhood, 4))
     else:
-        # approximate
         quads = set()
         while len(quads) < MAX_SAMPLES:
             quads.add(tuple(sorted(random.sample(neighborhood, 4))))
+        quads = list(quads)
 
-    q_arr = np.array(quads)
-    w_local = dist_matrix[q_arr, target].mean(axis=1)          # (N,)
+    q_arr = np.array(quads, dtype=np.int64)
 
-    # cache gromov energies
+    w_local = dist_matrix[q_arr, target].mean(axis=1)
+
     keys = [tuple(sorted(q)) for q in quads]
+
     missing = [key for key in keys if key not in quad_cache]
+
     if missing:
         quad_cache.update(zip(missing, gromov_energy(missing, dist_matrix)))
-    e_gromov = np.array([quad_cache[k] for k in keys])         # (N,)
+
+    e_gromov = np.array([quad_cache[k] for k in keys])
 
     # V* = beta * (log sum_i exp(-w_i/T_geom + delta_i/beta) - log sum_j exp(-w_j/T_geom))
     log_numerator   = logsumexp(-w_local[:, None] / geometric_temperature[None, :] 

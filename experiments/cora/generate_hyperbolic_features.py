@@ -92,7 +92,7 @@ for node_id in tqdm(range(0,G.number_of_nodes())):
     if node_id in completed_nodes:
         continue
 
-    result = KL_score(G,node_id,quad_cache,k,temperature,geometric_temperature,dist_matrix)
+    result = KL_score(G,node_id,{},k,temperature,geometric_temperature,dist_matrix)
     # Save immediately
     with open(OUTPUT_FILE, 'a', newline='') as f:
         writer = csv.writer(f)
