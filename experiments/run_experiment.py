@@ -12,7 +12,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.graphs.utils import compute_distance_nodes, create_graph
 from src.graphs.visualization import draw_graph_with_values, plot_hist
 from src.utils.config import load_optimization_config, load_graph_config
-from src.hyperbolicity.local import score_max, score_softmax, score_KL_divergence, score_entropic
+from optimization.local import score_max, score_softmax, score_KL_divergence, score_entropic
 
 def main():
     parser = argparse.ArgumentParser(description="Run Local Hyperbolicity Experiments")

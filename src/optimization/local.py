@@ -6,8 +6,8 @@ import networkx as nx
 import random 
 from math import comb
 
-SAMPLE_THRESHOLD = 200
-MAX_SAMPLES = comb(200,4)
+SAMPLE_THRESHOLD = 100
+MAX_SAMPLES = comb(100,4)
 
 def get_neighborhood(G, target, k):
     """

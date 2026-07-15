@@ -15,7 +15,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.graphs.utils import compute_distance_nodes, create_graph
 from src.graphs.visualization import draw_graph_with_values, plot_hist
 from src.utils.config import load_optimization_config, load_graph_config
-from src.hyperbolicity.local import _get_quads_and_energies, score_KL_divergence, score_entropic, score_softing, score_KL_divergence_batched
+from src.optimization.local import _get_quads_and_energies, new_score_KL_divergence, score_entropic, score_softing, score_KL_divergence_batched
 from src.optimization.objectives import gromov_energy, normalize
 from src.optimization.solver import solve_KL_regularization, solve_entropic_regularization
 
@@ -49,10 +49,11 @@ def compute_node_contributions(quads, mu, n_nodes):
     return contributions
 
 
-def compute_local_scores(nodes, dist_matrix, quad_cache, k, temperature, geometric_temperature, lambda_reg, sigma, method_name):
+def compute_local_scores(G, quad_cache, k, temperature, geometric_temperature, lambda_reg, sigma, method_name):
+    nodes = list(G.nodes())
     if method_name == "KL_divergence":
         return np.array([
-            score_KL_divergence_batched(n, dist_matrix, quad_cache, k, temperature, geometric_temperature)
+            new_score_KL_divergence(G, n, quad_cache, k, temperature, geometric_temperature)
             for n in tqdm(nodes, desc="Computing local scores (KL_divergence)")
         ])
     elif method_name == "entropic":
@@ -68,23 +69,23 @@ def compute_local_scores(nodes, dist_matrix, quad_cache, k, temperature, geometr
     return np.zeros(len(nodes))
 
 def visualize_results(G, pos, node_contributions, mu, scores, target, k, temperature, save_dir):
-    #draw_graph_with_values(G, pos, node_contributions,
-    #                       title=f"Mu Heatmap (target={target})",
-    #                       save_path=os.path.join(save_dir, f"{target}_{k}_contributions.png"))
+    draw_graph_with_values(G, pos, node_contributions,
+                           title=f"Mu Heatmap (target={target})",
+                           save_path=os.path.join(save_dir, f"{target}_{k}_contributions.png"))
 
-    #plot_hist(mu,
-    #          title=f"Mu distribution (mean={mu.mean():.8f}, var={mu.var():.8f})",
-    #          bins=20,
-    #          save_path=os.path.join(save_dir, f"{target}_{k}_mu.png"))
+    plot_hist(mu,
+              title=f"Mu distribution (mean={mu.mean():.8f}, var={mu.var():.8f})",
+              bins=20,
+              save_path=os.path.join(save_dir, f"{target}_{k}_mu.png"))
 
     draw_graph_with_values(G, pos, scores,
                            title="Local Hyperbolicity Heatmap",
                            save_path=None)
                            #save_path=os.path.join(save_dir, f"{k}_hop_T{temperature}.png"))
 
-    #plot_hist(scores,
-    #          title=f"Local Hyperbolicity (mean={scores.mean():.8f}, var={scores.var():.8f})",
-    #          bins=20)
+    plot_hist(scores,
+              title=f"Local Hyperbolicity (mean={scores.mean():.8f}, var={scores.var():.8f})",
+              bins=20)
 
 
 def main():
@@ -96,14 +97,12 @@ def main():
     method_name = args.method
 
     temperature, geometric_temperature, lambda_reg, sigma, k, target = load_optimization_config()
-    #geometric_temperature = np.arange(0.1,5.2,0.5)
     graph_cfg = load_graph_config()
     G, pos = create_graph(**graph_cfg)
     graph_type = graph_cfg['type']
 
     print(f"Graph diameter: {nx.diameter(G)}")
-    
-    dist_matrix = compute_distance_nodes(G)
+
     nodes = sorted(G.nodes())
     quad_cache = {}
 
@@ -122,16 +121,16 @@ def main():
     #quads, mu = compute_local_mu(target, dist_matrix, k, temperature, geometric_temperature, lambda_reg, sigma, method_name)
     node_contributions = np.zeros(shape=(100,))
     mu = np.zeros(shape=(100,))
-    scores = compute_local_scores(nodes, dist_matrix, quad_cache, k, temperature, geometric_temperature, lambda_reg, sigma, method_name)
+    scores = compute_local_scores(G, quad_cache, k, temperature, geometric_temperature, lambda_reg, sigma, method_name)
 
     elapsed = time.perf_counter() - t0
     print(f"{method_name} {k}-hop done in {elapsed:.2f}s")
     print(f"Cache size: {len(quad_cache)} vs theoretical max {math.comb(len(nodes), 4)}")
+    draw_graph_with_values(G, pos, scores,
+                           title="Local Hyperbolicity Heatmap",
+                           save_path=None)
+    #visualize_results(G, pos, node_contributions, mu, scores, target, k, temperature, save_dir=None)
 
-    visualize_results(G, pos, node_contributions, mu, scores, target, k, temperature, save_dir=None)
-    exit()
-    for i in range(len(geometric_temperature)):
-        visualize_results(G, pos, node_contributions, mu, scores[:,i], target, k, temperature, save_dir=None)
 
 
 if __name__ == "__main__":
