@@ -1,9 +1,9 @@
 graph:
-  type: "tree_with_grid" 
+  type: "tree_of_cycles" 
   # star,tree, cycle, path, complete, erdos_reyni, lattice
   # sbm, geometric, tree_of_cycles, tree_with_grid
   # molecule_like, hierarchical
-  n : 400
+  n : 100
   p : 0.1 # Erdos-Reyni
   sizes : [25,25] # SBM
   p_intra : [0.3,0.3,0.3] # SBM 
@@ -17,10 +17,10 @@ graph:
   random_edges_added : 0 # hierarchical 
 optimization:
   temperature: 0.1
-  geometric_temperature : 0.1
+  geometric_temperature : 1
   lambda_reg: 0.5
   alpha_diffusion: 2
   sigma : 10
   time : 5
   target_nodes : [0]
-  k : 20
+  k : 50

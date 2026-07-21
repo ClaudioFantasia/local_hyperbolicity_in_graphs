@@ -9,26 +9,10 @@ from math import comb
 SAMPLE_THRESHOLD = 100
 MAX_SAMPLES = comb(100,4)
 
-def get_neighborhood(G, target, k):
-    """
-    It return the list of node_labels that are in the k-hop of target node in the graph.
-    """
-    lengths = nx.single_source_shortest_path_length(G, target, cutoff=k)
-    return list(lengths.keys())
-
-
-def KL_score(G, target, quad_cache, k, temperature, geometric_temperature, dist_matrix):
-    neighborhood = get_neighborhood(G, target, k)
-    print(f"Just curios: how many neighbors -- {len(neighborhood)}")
-    if len(neighborhood) < 4:
-        return np.zeros_like(np.atleast_1d(geometric_temperature), dtype=float)
-  
-    
-    geometric_temperature = np.atleast_1d(geometric_temperature)
-
+def sampling_quads(neighborhood):
     n = len(neighborhood)
     num_quads = comb(n, 4)
-
+    
     if num_quads <= MAX_SAMPLES:
         quads = list(itertools.combinations(neighborhood, 4))
     else:
@@ -36,6 +20,63 @@ def KL_score(G, target, quad_cache, k, temperature, geometric_temperature, dist_
         while len(quads) < MAX_SAMPLES:
             quads.add(tuple(sorted(random.sample(neighborhood, 4))))
         quads = list(quads)
+    return quads
+
+def get_neighborhood(G, target, k, strategy='full_neighborhood', m=None, seed=None):
+    """
+    It returns the list of node_labels that are in the k-hop of target node in the graph.
+    """
+    if strategy == 'full_neighborhood':
+        lengths = nx.single_source_shortest_path_length(G, target, cutoff=k)
+        return list(lengths.keys())
+
+    if strategy == 'increasing_neighborhood':
+        rng = random.Random(seed)
+
+        visited = {target}
+        frontier = [target]
+        result = [target]
+
+        for _ in range(k):
+            next_frontier = []
+            seen_this_level = set()  # per evitare duplicati tra nodi diversi dello stesso frontier
+
+            for node in frontier:
+                neighbors = list(G.neighbors(node))
+                # candidati basati sullo stato di visited ALL'INIZIO del livello
+                candidates = [n for n in neighbors if n not in visited]
+
+                if m is not None and len(candidates) > m:
+                    sampled = rng.sample(candidates, m)
+                else:
+                    sampled = candidates
+
+                for n in sampled:
+                    if n not in seen_this_level:
+                        seen_this_level.add(n)
+                        next_frontier.append(n)
+
+            visited.update(seen_this_level)
+            result.extend(next_frontier)
+            frontier = next_frontier
+
+            if not frontier:
+                break
+
+        return result
+
+
+def KL_score(G, target, quad_cache, k, temperature, geometric_temperature, dist_matrix, strategy='full_neighborhood'):
+    neighborhood = get_neighborhood(G, target, k, strategy=strategy, m=3)
+    print(neighborhood)
+    print(f"Just curios: how many neighbors -- {len(neighborhood)} and target node {target}")
+    if len(neighborhood) < 4:
+        return np.zeros_like(np.atleast_1d(geometric_temperature), dtype=float)
+  
+
+    geometric_temperature = np.atleast_1d(geometric_temperature)
+
+    quads = sampling_quads(neighborhood)
 
     q_arr = np.array(quads, dtype=np.int64)
 

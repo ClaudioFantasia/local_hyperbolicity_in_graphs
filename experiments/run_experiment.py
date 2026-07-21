@@ -10,9 +10,83 @@ import argparse
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.graphs.utils import compute_distance_nodes, create_graph
-from src.graphs.visualization import draw_graph_with_values, plot_hist
+from src.graphs.visualization import draw_graph_with_values, plot_hist, draw_layout, draw_graphs
 from src.utils.config import load_optimization_config, load_graph_config
-from optimization.local import score_max, score_softmax, score_KL_divergence, score_entropic
+from src.optimization.local import KL_score
+
+from torch_geometric.data import Data
+from torch_geometric.datasets import Planetoid
+from torch_geometric.transforms import LargestConnectedComponents
+from torch_geometric.utils import k_hop_subgraph, to_networkx
+
+def load_dataset_largest_cc(name):
+    """
+    Loads the CiteSeer dataset and applies the LargestConnectedComponents
+    transform, so that the returned graph contains only nodes belonging
+    to its largest connected component.
+    """
+    name = name.lower()
+    if name not in ('cora', 'citeseer'):
+        raise ValueError(f"Unsupported dataset: {name}. Use 'cora' or 'citeseer'.")
+    
+    largest_cc = LargestConnectedComponents()
+    citeseer = Planetoid(root="data", name=name, transform=largest_cc)
+    data = citeseer[0]
+    return data
+
+def get_khop_subgraph_nx(dataset_name, v, k, root='./data', relabel_nodes=False):
+    """
+    Builds the k-hop subgraph around node v from Cora or CiteSeer
+    and returns it as a NetworkX graph.
+
+    Parameters
+    ----------
+    dataset_name : str
+        'cora' or 'citeseer'
+    v : int
+        Target node index (original indexing in the dataset)
+    k : int
+        Number of hops
+    root : str
+        Where to download/cache the dataset
+    relabel_nodes : bool
+        If True, subgraph nodes are labeled 0..n-1 (local indices).
+        If False (default), nodes keep their original dataset indices.
+
+    Returns
+    -------
+    G_sub : networkx.Graph
+        The k-hop subgraph, with node attribute 'y' (label).
+    """
+    data = load_dataset_largest_cc(dataset_name)
+
+    # Always relabel internally: this guarantees edge_index, x, y and
+    # num_nodes are all consistent and correctly sized.
+    subset, edge_index, mapping, edge_mask = k_hop_subgraph(
+        node_idx=v,
+        num_hops=k,
+        edge_index=data.edge_index,
+        relabel_nodes=True,
+        num_nodes=data.num_nodes
+    )
+
+    sub_x = data.x[subset]
+    sub_y = data.y[subset]
+
+    sub_data = Data(x=sub_x, edge_index=edge_index, y=sub_y,
+                     num_nodes=subset.size(0))
+
+    G_sub = to_networkx(sub_data, node_attrs=['y'], to_undirected=True)
+
+    #if not relabel_nodes:
+        # Map local indices (0..n-1) back to original dataset node ids
+        #local_to_original = {i: int(subset[i]) for i in range(subset.size(0))}
+        #G_sub = nx.relabel_nodes(G_sub, local_to_original)
+
+    return G_sub
+
+
+
 
 def main():
     parser = argparse.ArgumentParser(description="Run Local Hyperbolicity Experiments")
@@ -22,44 +96,43 @@ def main():
     args = parser.parse_args()
     method_name = args.method
 
+    if method_name != "entropic":
+        print("Sorry the other methods are not re-implemented yet")
+        raise KeyboardInterrupt()
+
     # Load configuration
-    temperature, geometric_temperature, lambda_reg, k, target = load_optimization_config()
-    
+    temperature, geometric_temperature, lambda_reg, sigma, k, target = load_optimization_config()
+    geometric_temperature = np.array([1.0])
     graph_cfg = load_graph_config()
     G, pos = create_graph(**graph_cfg)
-    graph_type = graph_cfg['type']
+    #G = get_khop_subgraph_nx(dataset_name='citeseer', v=0, k=7)
+    #graph_type = graph_cfg['type']
+    #pos = draw_layout(G)
+    draw_graphs(G, pos)
 
-    save_dir = os.path.join('data', 'figures', graph_type, method_name)
-    os.makedirs(save_dir, exist_ok=True)
+    print(f"Graph diameter: {nx.diameter(G)}")
+    if not nx.is_connected(G):
+        print("graph not connected, lets stop here")
+        raise KeyboardInterrupt()
+    
+    #save_dir = os.path.join('data', 'figures', graph_type, method_name)
+    #os.makedirs(save_dir, exist_ok=True)
 
     nodes = sorted(G.nodes())
     t0 = time.perf_counter()
     dist_matrix = compute_distance_nodes(G)
     quad_cache = {}
-
-    print(f"Graph diameter: {nx.diameter(G)}")
-
-    def compute_score(n):
-        if method_name == "max_pooling":
-            return score_max(n, dist_matrix, quad_cache, k)
-        elif method_name == "softmax":
-            return score_softmax(n, dist_matrix, quad_cache, k, temperature)
-        elif method_name == "KL_divergence":
-            return score_KL_divergence(n, dist_matrix, quad_cache, k, temperature, geometric_temperature)
-        elif method_name == "entropic":
-            return score_entropic(n, dist_matrix, quad_cache, k, temperature, lambda_reg)
-
-    scores = np.array([compute_score(n) for n in tqdm(nodes, desc=f"Computing local scores ({method_name})")])
+    strategy = "increasing_neighborhood"
+    #strategy = 'full_neighborhood'
+    scores = np.array([KL_score(G,n,quad_cache,k,temperature,geometric_temperature,dist_matrix,strategy) for n in tqdm(nodes)])
     elapsed = time.perf_counter() - t0
     print(f"[{method_name}] {k}-hop done in {elapsed:.2f}s")
     print(f"Cache size: {len(quad_cache)} vs theoretical max {math.comb(len(nodes), 4)}")
 
     # Visualize
-    save_path = os.path.join(save_dir, f"{k}_hop_T{temperature}_L{lambda_reg}.png")
-    draw_graph_with_values(G, pos, scores, title=f"Local Hyperbolicity Heatmap ({method_name})", save_path=save_path)
-    
-    hist_title = f"Local Hyperbolicity (mean={scores.mean():.8f}, var={scores.var():.8f})"
-    plot_hist(scores, title=hist_title, bins=20)
+    print(geometric_temperature)
+    for i in range(len(geometric_temperature)):
+        draw_graph_with_values(G, pos, scores[:,i], title=f"Local Hyperbolicity Heatmap ({method_name})", save_path=None)
 
 if __name__ == "__main__":
     main()
