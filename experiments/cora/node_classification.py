@@ -325,7 +325,7 @@ class GCN(torch.nn.Module):
 # Train / eval
 # --------------------------------------------------------------------------
 
-def make_splits(num_nodes, seed, train_frac=0.6, val_frac=0.2):
+def make_splits(num_nodes, seed, train_frac=0.5, val_frac=0.25):
     rng = np.random.RandomState(seed)
     idx = rng.permutation(num_nodes)
     n_train = int(train_frac * num_nodes)

@@ -66,11 +66,12 @@ def get_neighborhood(G, target, k, strategy='full_neighborhood', m=None, seed=No
         return result
 
 
-def KL_score(G, target, quad_cache, k, temperature, geometric_temperature, dist_matrix, strategy='full_neighborhood'):
-    neighborhood = get_neighborhood(G, target, k, strategy=strategy, m=3)
-    print(neighborhood)
+def KL_score(G, target, quad_cache, k, temperature, geometric_temperature, dist_matrix, strategy='full_neighborhood', m=5):
+    neighborhood = get_neighborhood(G, target, k, strategy=strategy, m=m)
+
+    return len(neighborhood)
     print(f"Just curios: how many neighbors -- {len(neighborhood)} and target node {target}")
-    if len(neighborhood) < 4:
+    if len(neighborhood) < 4:       
         return np.zeros_like(np.atleast_1d(geometric_temperature), dtype=float)
   
 

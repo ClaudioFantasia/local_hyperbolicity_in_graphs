@@ -100,7 +100,7 @@ def main():
     graph_cfg = load_graph_config()
     G, pos = create_graph(**graph_cfg)
     graph_type = graph_cfg['type']
-
+    dist_matrix = compute_distance_nodes(G)
     print(f"Graph diameter: {nx.diameter(G)}")
 
     nodes = sorted(G.nodes())
@@ -118,7 +118,7 @@ def main():
     
     t0 = time.perf_counter()
 
-    #quads, mu = compute_local_mu(target, dist_matrix, k, temperature, geometric_temperature, lambda_reg, sigma, method_name)
+    quads, mu = compute_local_mu(target, dist_matrix, k, temperature, geometric_temperature, lambda_reg, sigma, method_name)
     node_contributions = np.zeros(shape=(100,))
     mu = np.zeros(shape=(100,))
     scores = compute_local_scores(G, quad_cache, k, temperature, geometric_temperature, lambda_reg, sigma, method_name)
@@ -129,7 +129,7 @@ def main():
     draw_graph_with_values(G, pos, scores,
                            title="Local Hyperbolicity Heatmap",
                            save_path=None)
-    #visualize_results(G, pos, node_contributions, mu, scores, target, k, temperature, save_dir=None)
+    visualize_results(G, pos, node_contributions, mu, scores, target, k, temperature, save_dir=None)
 
 
 

@@ -1,5 +1,5 @@
 graph:
-  type: "tree_of_cycles" 
+  type: "tree_with_grid" 
   # star,tree, cycle, path, complete, erdos_reyni, lattice
   # sbm, geometric, tree_of_cycles, tree_with_grid
   # molecule_like, hierarchical
@@ -16,7 +16,7 @@ graph:
   size_grid : 4 # tree with grid
   random_edges_added : 0 # hierarchical 
 optimization:
-  temperature: 0.1
+  temperature: 0.5
   geometric_temperature : 1
   lambda_reg: 0.5
   alpha_diffusion: 2
