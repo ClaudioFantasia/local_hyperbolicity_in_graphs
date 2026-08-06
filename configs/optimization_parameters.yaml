@@ -16,11 +16,11 @@ graph:
   size_grid : 4 # tree with grid
   random_edges_added : 0 # hierarchical 
 optimization:
-  temperature: 0.5
-  geometric_temperature : 1
+  temperature: 0.1
+  geometric_temperature : 5
   lambda_reg: 0.5
   alpha_diffusion: 2
   sigma : 10
   time : 5
   target_nodes : [0]
-  k : 50
+  k : 10

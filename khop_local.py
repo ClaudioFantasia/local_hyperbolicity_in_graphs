@@ -3,117 +3,19 @@ import itertools
 from scipy.special import softmax, logsumexp
 from src.optimization.objectives import gromov_energy, compute_distance_nodes
 import networkx as nx
-import random 
-from math import comb
 
-SAMPLE_THRESHOLD = 100
-MAX_SAMPLES = comb(100,4)
-
-def sampling_quads(neighborhood):
-    n = len(neighborhood)
-    num_quads = comb(n, 4)
-    
-    if num_quads <= MAX_SAMPLES:
-        quads = list(itertools.combinations(neighborhood, 4))
-    else:
-        quads = set()
-        while len(quads) < MAX_SAMPLES:
-            quads.add(tuple(sorted(random.sample(neighborhood, 4))))
-        quads = list(quads)
-    return quads
-
-def get_neighborhood(G, target, k, strategy='full_neighborhood', m=None, seed=None):
-    """
-    It returns the list of node_labels that are in the k-hop of target node in the graph.
-    """
-    if strategy == 'full_neighborhood':
-        lengths = nx.single_source_shortest_path_length(G, target, cutoff=k)
-        return list(lengths.keys())
-
-    if strategy == 'increasing_neighborhood':
-        rng = random.Random(seed)
-
-        visited = {target}
-        frontier = [target]
-        result = [target]
-
-        for _ in range(k):
-            next_frontier = []
-            seen_this_level = set()  # per evitare duplicati tra nodi diversi dello stesso frontier
-
-            for node in frontier:
-                neighbors = list(G.neighbors(node))
-                # candidati basati sullo stato di visited ALL'INIZIO del livello
-                candidates = [n for n in neighbors if n not in visited]
-
-                if m is not None and len(candidates) > m:
-                    sampled = rng.sample(candidates, m)
-                else:
-                    sampled = candidates
-
-                for n in sampled:
-                    if n not in seen_this_level:
-                        seen_this_level.add(n)
-                        next_frontier.append(n)
-
-            visited.update(seen_this_level)
-            result.extend(next_frontier)
-            frontier = next_frontier
-
-            if not frontier:
-                break
-
-        return result
-
-
-def KL_score(G, target, quad_cache, k, temperature, geometric_temperature, dist_matrix, strategy='full_neighborhood', m=5):
-    neighborhood = get_neighborhood(G, target, k, strategy=strategy, m=m)
-    #if len(neighborhood) < 10:
-    #    print(target)
-    #    print(neighborhood)
-    #return len(neighborhood)
-    print(f"Just curios: how many neighbors -- {len(neighborhood)} and target node {target}")
-    if len(neighborhood) < 4:       
-        return np.zeros_like(np.atleast_1d(geometric_temperature), dtype=float)
-  
-
-    geometric_temperature = np.atleast_1d(geometric_temperature)
-
-    quads = sampling_quads(neighborhood)
-
-    q_arr = np.array(quads, dtype=np.int64)
-
-    w_local = dist_matrix[q_arr, target].mean(axis=1)
-
-    keys = [tuple(sorted(q)) for q in quads]
-
-    missing = [key for key in keys if key not in quad_cache]
-
-    if missing:
-        quad_cache.update(zip(missing, gromov_energy(missing, dist_matrix)))
-
-    e_gromov = np.array([quad_cache[k] for k in keys])
-
-    # V* = beta * (log sum_i exp(-w_i/T_geom + delta_i/beta) - log sum_j exp(-w_j/T_geom))
-    log_numerator   = logsumexp(-w_local[:, None] / geometric_temperature[None, :] 
-                                + e_gromov[:, None] / temperature, axis=0)
-    log_denominator = logsumexp(-w_local[:, None] / geometric_temperature[None, :], axis=0)
-
-    return temperature * (log_numerator - log_denominator)
-
-
-
-def old_get_neighborhood(G, target, k):
+def _get_neighborhood(G, target, k):
     lengths = nx.single_source_shortest_path_length(G, target, cutoff=k)
     neighborhood_nodes = list(lengths.keys())
     subG = G.subgraph(neighborhood_nodes)
     dist_matrix, node_index = compute_distance_nodes(subG)
     return neighborhood_nodes, dist_matrix, node_index
 
+def KL_score(quads, dist_matrix, target, temperature, geometric_temperature):
+    w_local = np.mean(dist_matrix[np.array(quads), target], axis=1)  # shape (N,)
+    gamma = softmax(-1 * w_local[:, None] / geometric_temperature[None, :], axis=0)
 
-
-
-def batched_subgraph_score_KL_divergence(G, target, quad_cache, k, temperature, geometric_temperature, batch_size=1_000_000):
+def new_score_KL_divergence(G, target, quad_cache, k, temperature, geometric_temperature, batch_size=1_000_000):
     neighborhood, dist_matrix, node_index = _get_neighborhood(G, target, k)
 
     if len(neighborhood) < 4:
