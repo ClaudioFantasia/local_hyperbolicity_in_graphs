@@ -102,20 +102,27 @@ def main():
 
     # Load configuration
     temperature, geometric_temperature, lambda_reg, sigma, k, target = load_optimization_config()
-    #geometric_temperature = np.array([2.0])
-    #graph_cfg = load_graph_config()
-    #G, pos = create_graph(**graph_cfg)
+    #geometric_temperature = np.array([1.0])
+    graph_cfg = load_graph_config()
+    G, pos = create_graph(**graph_cfg)
+    from src.optimization.local import get_neighborhood
+    m = 2
+    k = 50
+    #G = get_khop_subgraph_nx(dataset_name='citeseer', v=0, k=50)
 
-    G = get_khop_subgraph_nx(dataset_name='citeseer', v=0, k=50)
-  
+    #ret = get_neighborhood(G=G,target=10,k=50,strategy='increasing_neighborhood',m=m)
+    #print(len(ret))
+    #print(ret)
+    #exit()
 
-    graph_type = 'citeseer'
-    m = 10
+    #graph_type = 'citeseer'
+    
     #graph_type = graph_cfg['type']
     pos = draw_layout(G)
-    #draw_graphs(G, pos)
+    draw_graphs(G, pos)
+    #exit()
 
-    print(f"Graph diameter: {nx.diameter(G)}")
+    #print(f"Graph diameter: {nx.diameter(G)}")
     if not nx.is_connected(G):
         print("graph not connected, lets stop here")
         raise KeyboardInterrupt()
@@ -128,14 +135,15 @@ def main():
     dist_matrix = compute_distance_nodes(G)
     quad_cache = {}
     #strategy = "increasing_neighborhood"
-    strategy = 'increasing_neighborhood'
-    scores = np.array([KL_score(G,v,quad_cache,k,temperature,geometric_temperature,dist_matrix,strategy,m) for v in range(0,1000)])
+    strategy = 'full_neighborhood'
+    scores = np.array([KL_score(G,v,quad_cache,k,temperature,geometric_temperature,dist_matrix,strategy,m) for v in range(len(G.nodes()))])
     elapsed = time.perf_counter() - t0
     print(f"[{method_name}] {k}-hop done in {elapsed:.2f}s")
     print(f"Cache size: {len(quad_cache)} vs theoretical max {math.comb(len(nodes), 4)}")
     plot_hist(scores)
+
     # Visualize
-    print(geometric_temperature)
+    #print(geometric_temperature)
   
     draw_graph_with_values(G, pos, scores, title=f"Local Hyperbolicity Heatmap ({method_name})", save_path=None)
 

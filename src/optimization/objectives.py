@@ -1,4 +1,5 @@
 
+import itertools
 from scipy.linalg import expm
 import numpy as np
 from scipy.sparse.linalg import factorized
@@ -24,13 +25,12 @@ def compute_gromov_hyperbolicity(G):
 
     N.B. Be careful that we are allocating the full vector of quads. This code can run on maximum 300 nodes.
     """   
-    dist_matrix = compute_distance_nodes(G)
-    nodes = list(G.nodes())
-    deltas = {}
+    dist_matrix, index = compute_distance_nodes(G)
+    positions = list(index.values())
 
-    quads = list(itertools.combinations(nodes,4))
+    quads = list(itertools.combinations(positions, 4))
 
-    deltas = gromov_energy(quads,dist_matrix)
+    deltas = gromov_energy(quads, dist_matrix)
     
     max_delta = np.max(deltas)
     return max_delta
@@ -46,9 +46,6 @@ def normalize(x):
     else: 
         x = np.zeros(shape=np.shape(x))
     return x  
-
-def negEntropy_regularization(x, temperature):
-    return temperature * x * np.log(x)
 
 def l2_regularization(x, lambda_reg):
     return lambda_reg * 0.5 * (x**2)
@@ -74,32 +71,6 @@ def compute_distance_nodes(G):
 
     return dist, index
 
-
-
-
-
-
-
-
-
-
-
-def distance_energy(quads, dist_matrix):
-    P = np.zeros(shape = (len(quads)))
-    for i, quad in enumerate(quads):
-        P[i] = compute_intra_distance(dist_matrix, quad)
-    return P 
-
-def exp_distance_energy(distance_energy, geometry_temperature = 1):
-    return softmax(-distance_energy / geometry_temperature)
-
-
-def spectral_energy(quads, L, alpha_diffusion):
-    E = np.zeros(len(quads))
-    results = diffuse_signal_denoising_solve(quads, L, alpha_diffusion)
-    for i, x in enumerate(results): 
-        E[i] = x.T @ L @ x   
-    return E
 
 def local_weights_diffuse_based_alpha(quads, localized_nodes, L, alpha_diffusion=0.5):
     weights = np.zeros(len(quads))

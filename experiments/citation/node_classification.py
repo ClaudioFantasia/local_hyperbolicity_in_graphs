@@ -1,32 +1,32 @@
 """
 Baseline node classification (and optional node regression) experiments on
-the CiteSeer citation network, restricted to its largest connected component
-(LCC).
+the Cora or CiteSeer citation network, restricted to its largest connected
+component (LCC). Select the dataset with --dataset {cora,citeseer}.
 
 Baseline model: PyTorch Geometric's built-in GCNConv layer
 (Kipf & Welling, "Semi-Supervised Classification with Graph Convolutional
 Networks", 2017).
 
 Feature modes (selectable via --features):
-    bow     -> the standard CiteSeer bag-of-words node features (3703-dim, binary)
+    bow     -> the standard bag-of-words node features shipped with the dataset
     custom  -> your own per-node feature vectors, loaded from a file
     concat  -> bow features concatenated with your custom features
 
 Usage examples
 ---------------
 # Classification baseline, standard bag-of-words features
-python citeseer_gcn_baseline.py --task classification --features bow
+python node_classification.py --dataset cora --features bow
 
 # Classification with your own features only
-python citeseer_gcn_baseline.py --task classification --features custom \
+python node_classification.py --dataset citeseer --features custom \
     --custom-features-path my_features.pt
 
 # Classification with bow + custom concatenated
-python citeseer_gcn_baseline.py --task classification --features concat \
+python node_classification.py --dataset cora --features concat \
     --custom-features-path my_features.pt
 
 # Node regression (needs a continuous target per node)
-python citeseer_gcn_baseline.py --task regression --features concat \
+python node_classification.py --dataset cora --task regression --features concat \
     --custom-features-path my_features.pt \
     --custom-targets-path my_targets.pt
 
@@ -39,30 +39,30 @@ column, on top of whichever --features mode you picked. Together these
 cover a 5-way comparison such as:
 
     # 1) original (bag-of-words) features only
-    python citeseer_gcn_baseline.py --features bow
+    python node_classification.py --dataset cora --features bow
 
     # 2) custom features, first m dims only
-    python citeseer_gcn_baseline.py --features custom \
+    python node_classification.py --dataset cora --features custom \
         --custom-features-path my_features.pt --custom-num-features 6
 
     # 3) custom (first m dims) + node degree
-    python citeseer_gcn_baseline.py --features custom \
+    python node_classification.py --dataset cora --features custom \
         --custom-features-path my_features.pt --custom-num-features 6 --add-degree
 
     # 4) original + custom (first m dims)
-    python citeseer_gcn_baseline.py --features concat \
+    python node_classification.py --dataset cora --features concat \
         --custom-features-path my_features.pt --custom-num-features 6
 
     # 5) original + custom (first m dims) + node degree
-    python citeseer_gcn_baseline.py --features concat \
+    python node_classification.py --dataset cora --features concat \
         --custom-features-path my_features.pt --custom-num-features 6 --add-degree
 
 Averaging over multiple runs
 ------------------------------
---seeds controls how many runs to average (default "0,1,2,3,4" -> 5 runs).
-Each seed determines BOTH that run's train/val/test split and the model's
-initialization/dropout, and the script reports mean +/- std across runs.
-Use the exact same --seeds list when comparing different --features
+--seeds controls how many runs to average (default "0,1,2,3,4,5,6,7,8,9" ->
+10 runs). Each seed determines BOTH that run's train/val/test split and the
+model's initialization/dropout, and the script reports mean +/- std across
+runs. Use the exact same --seeds list when comparing different --features
 configurations, so run i always trains/evaluates on the same split for
 every method (a fair, paired comparison, not just independently-random
 splits for each). Pass a single seed (e.g. --seeds 0) to disable averaging.
@@ -76,14 +76,14 @@ Any of the following are accepted (detected from the file extension):
     .csv  -> a csv file with N rows (no header, no index column), one row
              per node.
 
-IMPORTANT: N must equal the number of nodes in the LCC (printed at runtime,
-printed at runtime for the standard CiteSeer graph). Rows must be ordered the same way this
-script orders LCC nodes: ascending order of the *original* Planetoid node
-id (i.e. take the original CiteSeer nodes in order, drop the ones that
-aren't in the largest connected component, keep the rest in that same
-relative order -- that's node_map / the row order this script expects).
-Use --dump-node-map to write out that exact node ordering as a .npy file
-so you can build your CSV/features in matching order.
+IMPORTANT: N must equal the number of nodes in the LCC (printed at runtime).
+Rows must be ordered the same way this script orders LCC nodes: ascending
+order of the *original* Planetoid node id (i.e. take the original dataset
+nodes in order, drop the ones that aren't in the largest connected
+component, keep the rest in that same relative order -- that's node_map /
+the row order this script expects). Use --dump-node-map to write out that
+exact node ordering as a .npy file so you can build your CSV/features in
+matching order.
 
 If you don't have your own features/targets yet, run with --features bow
 (classification) first to sanity-check the pipeline. For regression, if you
@@ -93,6 +93,7 @@ real target as soon as you have it.
 """
 
 import argparse
+from math import inf
 
 import networkx as nx
 import numpy as np
@@ -103,27 +104,41 @@ from torch_geometric.datasets import Planetoid
 from torch_geometric.nn import GCNConv
 from torch_geometric.utils import subgraph, to_networkx
 
+# Planetoid's expected `name=` argument and the repo's default download
+# folder per --dataset choice.
+DATASET_INFO = {
+    "cora": {"name": "Cora", "default_root": "./data/Cora"},
+    "citeseer": {"name": "CiteSeer", "default_root": "./data/CiteSeer"},
+}
+
 # --------------------------------------------------------------------------
 # Data loading
 # --------------------------------------------------------------------------
 
-def load_citeseer_lcc(root="./data/CiteSeer"):
-    """Load CiteSeer and restrict it to its largest connected component (LCC).
+def load_citation_lcc(dataset, root=None):
+    """Load Cora/CiteSeer and restrict it to its largest connected component (LCC).
+
+    Parameters
+    ----------
+    dataset : "cora" or "citeseer"
+    root : download/cache root; defaults to DATASET_INFO[dataset]["default_root"].
 
     Returns
     -------
     data : torch_geometric.data.Data
         Graph restricted to the LCC (edge_index re-indexed to 0..n-1).
-    bow_x : torch.Tensor [n_lcc, 1433]
+    bow_x : torch.Tensor [n_lcc, F]
         Standard bag-of-words features for the LCC nodes.
     y : torch.Tensor [n_lcc]
         Class labels for the LCC nodes.
     node_map : np.ndarray [n_lcc]
-        Mapping from new (LCC) node index -> original CiteSeer node index.
+        Mapping from new (LCC) node index -> original dataset node index.
         Use this to subset any external feature/target file you load.
     """
-    dataset = Planetoid(root=root, name="CiteSeer")
-    data = dataset[0]
+    info = DATASET_INFO[dataset]
+    root = root or info["default_root"]
+    ds = Planetoid(root=root, name=info["name"])
+    data = ds[0]
 
     g = to_networkx(data, to_undirected=True)
     largest_cc = max(nx.connected_components(g), key=len)
@@ -151,7 +166,7 @@ def _parse_bracket_array(s):
 
 def load_external_array(path, node_map):
     """Load a feature/target file with one row per LCC node (len(node_map)
-    rows), ordered by ascending original CiteSeer node id (the same order as
+    rows), ordered by ascending original dataset node id (the same order as
     node_map / --dump-node-map).
 
     Supported formats:
@@ -216,7 +231,7 @@ def load_external_array(path, node_map):
         raise ValueError(
             f"Expected {len(node_map)} rows (one per LCC node), got "
             f"{arr.shape[0]}. Your file must contain a row for every LCC "
-            f"node only (not the full CiteSeer graph), ordered by "
+            f"node only (not the full dataset graph), ordered by "
             f"ascending original node id -- use --dump-node-map to check "
             f"the exact ordering expected."
         )
@@ -303,21 +318,23 @@ def build_targets(task, y_cls, node_map, custom_targets_path, edge_index, num_no
 # --------------------------------------------------------------------------
 
 class GCN(torch.nn.Module):
-    """Standard 2-layer GCN baseline using PyG's built-in GCNConv. Works for
-    both classification (out_dim = num_classes, logits) and regression
-    (out_dim = 1)."""
+    """GCN baseline: an arbitrary number of GCNConv layers (default 3), with
+    ReLU + dropout after every layer except the last."""
 
-    def __init__(self, in_dim, hidden_dim, out_dim, dropout=0.5):
+    def __init__(self, in_dim, hidden_dim, out_dim, num_layers=3, dropout=0.5):
         super().__init__()
-        self.conv1 = GCNConv(in_dim, hidden_dim)
-        self.conv2 = GCNConv(hidden_dim, out_dim)
+        dims = [in_dim] + [hidden_dim] * (num_layers - 1) + [out_dim]
+        self.layers = torch.nn.ModuleList([
+            GCNConv(dims[i], dims[i + 1]) for i in range(len(dims) - 1)
+        ])
         self.dropout = dropout
 
     def forward(self, x, edge_index):
-        x = self.conv1(x, edge_index)
-        x = F.relu(x)
-        x = F.dropout(x, p=self.dropout, training=self.training)
-        x = self.conv2(x, edge_index)
+        for i, layer in enumerate(self.layers):
+            x = layer(x, edge_index)
+            if i != len(self.layers) - 1:
+                x = F.relu(x)
+                x = F.dropout(x, p=self.dropout, training=self.training)
         return x
 
 
@@ -343,7 +360,11 @@ def make_splits(num_nodes, seed, train_frac=0.5, val_frac=0.25):
 
 
 def train(model, edge_index, x, y, train_mask, val_mask, test_mask, task,
-          epochs, lr, weight_decay, device, verbose=True):
+          max_epochs, lr, weight_decay, device, patience=100,
+          stopping_threshold=1.01, verbose=True):
+    """Adam + ReduceLROnPlateau(patience=25), with early stopping on
+    validation accuracy/MSE using the given patience/threshold, up to
+    max_epochs."""
     model = model.to(device)
     x, y, edge_index = x.to(device), y.to(device), edge_index.to(device)
     train_mask, val_mask, test_mask = (
@@ -351,9 +372,13 @@ def train(model, edge_index, x, y, train_mask, val_mask, test_mask, task,
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    best_val, best_test, metric_name = None, None, "acc" if task == "classification" else "mse"
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=25)
+    metric_name = "acc" if task == "classification" else "mse"
 
-    for epoch in range(1, epochs + 1):
+    best_val, best_test = (0.0, 0.0) if task == "classification" else (inf, inf)
+    epochs_no_improve = 0
+
+    for epoch in range(1, max_epochs + 1):
         model.train()
         optimizer.zero_grad()
         out = model(x, edge_index)
@@ -379,17 +404,29 @@ def train(model, edge_index, x, y, train_mask, val_mask, test_mask, task,
                 val_m = F.mse_loss(pred[val_mask], y[val_mask]).item()
                 test_m = F.mse_loss(pred[test_mask], y[test_mask]).item()
 
-        improved = best_val is None or (
-            val_m > best_val if task == "classification" else val_m < best_val
-        )
+        scheduler.step(val_m if task == "regression" else -val_m)
+
+        if task == "classification":
+            improved = val_m > best_val * stopping_threshold if best_val > 0 else True
+        else:
+            improved = val_m < best_val / stopping_threshold if best_val < inf else True
+
         if improved:
             best_val, best_test = val_m, test_m
+            epochs_no_improve = 0
+        else:
+            epochs_no_improve += 1
 
         if verbose and (epoch % 20 == 0 or epoch == 1):
             print(f"epoch {epoch:03d} | loss {loss.item():.4f} | "
                   f"train {metric_name} {train_m:.4f} | "
                   f"val {metric_name} {val_m:.4f} | "
                   f"test {metric_name} {test_m:.4f}")
+
+        if epochs_no_improve > patience:
+            if verbose:
+                print(f"Early stopping at epoch {epoch} (patience={patience}).")
+            break
 
     if verbose:
         print(f"Best val {metric_name}: {best_val:.4f} | "
@@ -405,6 +442,7 @@ def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
+    parser.add_argument("--dataset", choices=["cora", "citeseer"], default="cora")
     parser.add_argument("--task", choices=["classification", "regression"], default="classification")
     parser.add_argument("--features", choices=["bow", "custom", "concat"], default="bow")
     parser.add_argument("--custom-features-path", default=None)
@@ -418,12 +456,20 @@ def main():
                               "feature column, on top of whichever "
                               "--features mode is selected.")
     parser.add_argument("--custom-targets-path", default=None)
-    parser.add_argument("--hidden-dim", type=int, default=64)
-    parser.add_argument("--epochs", type=int, default=200)
-    parser.add_argument("--lr", type=float, default=0.01)
-    parser.add_argument("--weight-decay", type=float, default=5e-4)
+    parser.add_argument("--num-layers", type=int, default=3)
+    parser.add_argument("--hidden-dim", type=int, default=128)
+    parser.add_argument("--epochs", type=int, default=1000000,
+                         help="Max epochs; early stopping (--patience) will "
+                              "almost always stop well before this.")
+    parser.add_argument("--patience", type=int, default=100,
+                         help="Early-stopping patience on validation acc/mse.")
+    parser.add_argument("--stopping-threshold", type=float, default=1.01,
+                         help="Val acc must exceed best_val * this factor "
+                              "to count as an improvement.")
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--weight-decay", type=float, default=1e-5)
     parser.add_argument("--dropout", type=float, default=0.5)
-    parser.add_argument("--seeds", type=str, default="0,1,2,3,4",
+    parser.add_argument("--seeds", type=str, default="0,1,2,3,4,5,6,7,8,9",
                          help="Comma-separated list of seeds, e.g. '0,1,2,3,4'. "
                               "Each seed controls BOTH the train/val/test split "
                               "and the model's initialization/dropout for that "
@@ -434,24 +480,26 @@ def main():
                               "always uses the same split for every method "
                               "(a fair, paired comparison). Pass a single "
                               "value (e.g. '0') for one run only.")
-    parser.add_argument("--data-root", default="./data/CiteSeer")
+    parser.add_argument("--data-root", default=None,
+                         help="Defaults to ./data/Cora or ./data/CiteSeer "
+                              "depending on --dataset.")
     parser.add_argument("--dump-node-map", default=None,
                          help="Optional path (.npy) to save the LCC node_map "
-                              "(original CiteSeer node ids, in the order this "
-                              "script expects your custom feature/target "
-                              "rows to be in), then exit.")
+                              "(original node ids, in the order this script "
+                              "expects your custom feature/target rows to "
+                              "be in), then exit.")
     args = parser.parse_args()
 
     seeds = [int(s) for s in args.seeds.split(",")]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    data, bow_x, y_cls, node_map = load_citeseer_lcc(root=args.data_root)
+    data, bow_x, y_cls, node_map = load_citation_lcc(args.dataset, root=args.data_root)
     num_nodes = data.num_nodes
 
     if args.dump_node_map is not None:
         np.save(args.dump_node_map, node_map)
-        print(f"Saved LCC node_map ({len(node_map)} original CiteSeer node ids, "
-              f"ascending order) to {args.dump_node_map}")
+        print(f"Saved LCC node_map ({len(node_map)} original {args.dataset} "
+              f"node ids, ascending order) to {args.dump_node_map}")
         return
 
     # Feature/target construction is deterministic given the data and CLI
@@ -469,7 +517,8 @@ def main():
 
     degree_note = " + degree" if args.add_degree else ""
     trunc_note = f" (first {args.custom_num_features} custom dims)" if args.custom_num_features else ""
-    print(f"\nTask: {args.task} | Features: {args.features}{trunc_note}{degree_note} "
+    print(f"\nDataset: {args.dataset} | Task: {args.task} | "
+          f"Features: {args.features}{trunc_note}{degree_note} "
           f"(dim={x.shape[1]}) | Nodes: {num_nodes} | "
           f"Edges: {data.edge_index.shape[1] // 2} | Seeds: {seeds}")
 
@@ -486,11 +535,13 @@ def main():
         train_mask, val_mask, test_mask = make_splits(num_nodes, seed=seed)
 
         model = GCN(in_dim=x.shape[1], hidden_dim=args.hidden_dim,
-                    out_dim=out_dim, dropout=args.dropout)
+                    out_dim=out_dim, num_layers=args.num_layers,
+                    dropout=args.dropout)
 
         best_val, best_test = train(
             model, data.edge_index, x, y, train_mask, val_mask, test_mask,
             args.task, args.epochs, args.lr, args.weight_decay, device,
+            patience=args.patience, stopping_threshold=args.stopping_threshold,
             verbose=(len(seeds) == 1),
         )
         val_scores.append(best_val)

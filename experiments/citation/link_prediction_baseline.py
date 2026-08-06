@@ -11,8 +11,12 @@ Metrics: ROC-AUC, Average Precision (AP)
 
 Requirements:
   pip install torch torch-geometric scikit-learn networkx
+
+Expects cora_node_metrics.csv (produced by generate_hyperbolic_features.py
+--dataset cora) to sit next to this script.
 """
 
+import os
 import random
 import math
 import numpy as np
@@ -420,9 +424,10 @@ def print_summary(heuristic_results, gcn_results):
 
 if __name__ == "__main__":
     # Load data
+    cora_features_path = os.path.join(os.path.dirname(__file__), "cora_node_metrics.csv")
     dataset, train_data, val_data, test_data = load_cora(
         feature_mode='custom',
-        custom_features_path='cora_node_metrics.csv')
+        custom_features_path=cora_features_path)
 
     # Heuristic baselines
     heuristic_results = evaluate_heuristic(train_data, val_data, test_data)

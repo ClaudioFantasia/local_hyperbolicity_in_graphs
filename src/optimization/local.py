@@ -68,8 +68,10 @@ def get_neighborhood(G, target, k, strategy='full_neighborhood', m=None, seed=No
 
 def KL_score(G, target, quad_cache, k, temperature, geometric_temperature, dist_matrix, strategy='full_neighborhood', m=5):
     neighborhood = get_neighborhood(G, target, k, strategy=strategy, m=m)
-
-    return len(neighborhood)
+    #if len(neighborhood) < 10:
+    #    print(target)
+    #    print(neighborhood)
+    #return len(neighborhood)
     print(f"Just curios: how many neighbors -- {len(neighborhood)} and target node {target}")
     if len(neighborhood) < 4:       
         return np.zeros_like(np.atleast_1d(geometric_temperature), dtype=float)
@@ -98,52 +100,6 @@ def KL_score(G, target, quad_cache, k, temperature, geometric_temperature, dist_
     log_denominator = logsumexp(-w_local[:, None] / geometric_temperature[None, :], axis=0)
 
     return temperature * (log_numerator - log_denominator)
-
-
-
-def old_get_neighborhood(G, target, k):
-    lengths = nx.single_source_shortest_path_length(G, target, cutoff=k)
-    neighborhood_nodes = list(lengths.keys())
-    subG = G.subgraph(neighborhood_nodes)
-    dist_matrix, node_index = compute_distance_nodes(subG)
-    return neighborhood_nodes, dist_matrix, node_index
-
-
-
-
-def batched_subgraph_score_KL_divergence(G, target, quad_cache, k, temperature, geometric_temperature, batch_size=1_000_000):
-    neighborhood, dist_matrix, node_index = _get_neighborhood(G, target, k)
-
-    if len(neighborhood) < 4:
-        return np.zeros_like(np.atleast_1d(geometric_temperature), dtype=float)
-
-    geometric_temperature = np.atleast_1d(geometric_temperature)
-    target_idx = node_index[target]
-    quad_iter = itertools.combinations(neighborhood, 4)
-    gammaexp_summation = 0
-
-    while True:
-        quads = list(itertools.islice(quad_iter, batch_size))
-        if not quads:
-            break
-
-        ## DISTANCE DISTRIBUTION
-        q_idx = np.array([[node_index[n] for n in q] for q in quads])
-        w_local = dist_matrix[q_idx, target_idx].mean(axis=1)
-        gamma = softmax(-w_local[:, None] / geometric_temperature[None, :], axis=0)
-
-        ## GROMOV COMPUTATION
-        keys = [tuple(sorted(q)) for q in quads]
-        missing = [key for key in keys if key not in quad_cache]
-        if missing:
-            missing_idx = [[node_index[n] for n in q] for q in missing]
-            quad_cache.update(zip(missing, gromov_energy(missing_idx, dist_matrix)))
-        e_gromov = np.array([quad_cache[k] for k in keys])[:, None]
-
-
-        gammaexp_summation += (gamma * np.exp(e_gromov / temperature)).sum(axis=0)
-
-    return temperature * np.log(gammaexp_summation)
 
 
 
@@ -234,73 +190,24 @@ def score_KL_divergence_batched(target, dist_matrix, quad_cache, k, temperature,
 
     lse_num = m_num + np.log(s_num)
     lse_den = m_den + np.log(s_den)
-    return temperature * (lse_num - lse_den)    
-
-
-
-
-
-
-
-
-
-
-
-
+    return temperature * (lse_num - lse_den)
 
 ###
-"""
-I am completely lost, I am just gonna rewrite the important module above
-"""
+# Below this point: legacy scoring variants, kept only because
+# experiments/filtration.py (precompute_energies, score_KL_divergence)
+# and experiments/spatial_sparsity.py (_get_quads_and_energies,
+# score_entropic, score_softing, score_KL_divergence_batched) still import
+# from them. Both of those scripts are currently broken for unrelated
+# reasons (see their own files) and are not being fixed in this pass, so
+# these functions stay put rather than being reconciled with KL_score
+# above, which is the current/active scoring function.
 ###
-
-
-
-
-
-
-
 
 def precompute_energies(nodes, dist_matrix):
     quads = list(itertools.combinations(nodes, 4))
     energies = gromov_energy(quads, dist_matrix)
     print(f"Global Gromov hyperbolicity: {np.max(energies):.4f}")
     return dict(zip(quads, energies))
-
-
-
-def score_max(target, dist_matrix, quad_cache, k):
-    quads, e_gromov = _get_quads_and_energies(target, dist_matrix, quad_cache, k)
-    if not quads:
-        return 0.0
-
-    return float(np.max(e_gromov))
-
-
-def score_softmax(target, dist_matrix, quad_cache, k, temperature):
-    neighborhood = np.where((dist_matrix[target] <= k) & (dist_matrix[target] > 0))[0]
-    quads = [tuple(sorted((target, x, y, z))) for x, y, z in itertools.combinations(neighborhood, 3)]
-    if not quads:
-        return 0.0
-
-    missing = [q for q in quads if q not in quad_cache]
-    if missing:
-        energies = gromov_energy(missing, dist_matrix)
-        quad_cache.update(zip(missing, energies))
-
-    e_gromov = np.array([quad_cache[q] for q in quads])
-    dists    = dist_matrix[target, np.array(list(q for q in quads))[:, 1:]] # Just a simplification, actually need the elements that are not target. 
-    # But wait, earlier it was list(q[1:] ... ), which assumed the first element was the target. Since we sorted them, it's safer to just do set subtraction, or we can use the original tuple for distance.
-
-    # Let's keep the original tuple logic for dists
-    original_quads = [(target, x, y, z) for x, y, z in itertools.combinations(neighborhood, 3)]
-    dists = dist_matrix[target, np.array(list(q[1:] for q in original_quads))]
-    weights = softmax(-np.sum(dists, axis=1) / temperature)
-    return float(np.sum(e_gromov * weights))
-
-
-
-
 
 def score_entropic(target, dist_matrix, quad_cache, k, temperature, lambda_reg):
     quads, e_gromov = _get_quads_and_energies(target, dist_matrix, quad_cache, k)

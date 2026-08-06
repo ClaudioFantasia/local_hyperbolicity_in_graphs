@@ -1,21 +1,25 @@
-# =============================================================
-# K-HOP NEIGHBORHOOD ANALYSIS ON CITESEER (LARGEST CONNECTED COMPONENT)
-# =============================================================
-# This script:
-#   1. Loads CiteSeer and restricts it to its largest connected component
-#   2. Verifies the transform worked
-#   3. Computes k-hop reachability for a single node
-#   4. Computes k-hop reachability averaged over ALL nodes
-#   5. Visualizes:
-#       - the growth curve for a single node
-#       - the growth curve averaged over all nodes (with std)
-#       - the actual k-hop subgraph around a chosen node
-# =============================================================
+"""
+K-hop neighborhood analysis and visualization on Cora or CiteSeer, largest
+connected component only. Select the dataset with --dataset {cora,citeseer}.
 
+This script:
+    1. Loads the dataset and restricts it to its largest connected component
+    2. Verifies the transform worked
+    3. Computes k-hop reachability for a single node
+    4. Computes k-hop reachability averaged over ALL nodes
+    5. Visualizes:
+        - a single node's k-hop neighborhood, colored by hop distance
+        - the growth curve for a single node
+        - the growth curve averaged over all nodes (with std)
+        - the actual k-hop subgraph around a chosen node
 
-# =============================================================
-# IMPORTS
-# =============================================================
+Usage:
+    python visualize.py --dataset cora
+    python visualize.py --dataset citeseer
+"""
+
+import argparse
+
 import numpy as np
 import pandas as pd
 import networkx as nx
@@ -26,33 +30,29 @@ from torch_geometric.transforms import LargestConnectedComponents
 from torch_geometric.utils import k_hop_subgraph, to_networkx
 from torch_geometric.data import Data
 
+DATASET_NAMES = {"cora": "Cora", "citeseer": "CiteSeer"}
 
-# =============================================================
-# STEP 1: Load CiteSeer, explicitly applying LargestConnectedComponents
-# =============================================================
-def load_citeseer_largest_cc():
+
+def load_largest_cc(dataset_name):
     """
-    Loads the CiteSeer dataset and applies the LargestConnectedComponents
-    transform, so that the returned graph contains only nodes belonging
-    to its largest connected component.
+    Loads the dataset and applies the LargestConnectedComponents transform,
+    so that the returned graph contains only nodes belonging to its largest
+    connected component.
     """
     largest_cc = LargestConnectedComponents()
-    citeseer = Planetoid(root="data", name="citeseer", transform=largest_cc)
-    data = citeseer[0]
-    return citeseer, data
+    ds = Planetoid(root="data", name=dataset_name, transform=largest_cc)
+    data = ds[0]
+    return ds, data
 
 
-# =============================================================
-# STEP 2: Verify the transform actually took effect
-# =============================================================
-def verify_largest_cc(data):
+def verify_largest_cc(dataset_name, data):
     """
     Compares the transformed graph against the raw (untransformed) graph,
     and checks that the transformed graph is indeed a single connected
     component.
     """
-    citeseer_raw = Planetoid(root="data", name="citeseer")  # no transform
-    data_raw = citeseer_raw[0]
+    ds_raw = Planetoid(root="data", name=dataset_name)  # no transform
+    data_raw = ds_raw[0]
 
     print("=" * 60)
     print("VERIFYING LargestConnectedComponents TRANSFORM")
@@ -71,9 +71,6 @@ def verify_largest_cc(data):
     print("Confirmed: graph is a single connected component.\n")
 
 
-# =============================================================
-# STEP 3: Compute k-hop reachable node counts for ONE node
-# =============================================================
 def compute_khop_counts_single_node(source_node, edge_index, max_k):
     """
     For a single source node, compute how many nodes are reachable
@@ -94,9 +91,6 @@ def compute_khop_counts_single_node(source_node, edge_index, max_k):
     return counts
 
 
-# =============================================================
-# STEP 4: Compute k-hop reachable node counts for ALL nodes
-# =============================================================
 def compute_khop_counts_all_nodes(num_nodes, edge_index, max_k, verbose=True):
     """
     Loop over every node in the graph and compute its k-hop
@@ -116,9 +110,6 @@ def compute_khop_counts_all_nodes(num_nodes, edge_index, max_k, verbose=True):
     return reachable_counts
 
 
-# =============================================================
-# STEP 5: Summarize (average + std) across all nodes
-# =============================================================
 def summarize_khop_counts(reachable_counts):
     """
     Given the (num_nodes, max_k + 1) matrix of reachability counts,
@@ -139,9 +130,6 @@ def summarize_khop_counts(reachable_counts):
     return summary_df
 
 
-# =============================================================
-# STEP 6: Plot average growth curve (across all nodes)
-# =============================================================
 def plot_average_growth(summary_df, title="Average k-hop neighborhood growth", save_path=None):
     plt.figure(figsize=(7, 5))
     plt.errorbar(
@@ -162,9 +150,6 @@ def plot_average_growth(summary_df, title="Average k-hop neighborhood growth", s
     plt.show()
 
 
-# =============================================================
-# STEP 7: Plot growth curve for ONE specific node
-# =============================================================
 def plot_single_node_growth(source_node, counts, title=None, save_path=None):
     """
     counts: list of length (max_k + 1), from compute_khop_counts_single_node()
@@ -186,9 +171,6 @@ def plot_single_node_growth(source_node, counts, title=None, save_path=None):
     plt.show()
 
 
-# =============================================================
-# STEP 8: Visualize the ACTUAL subgraph around one node
-# =============================================================
 def visualize_khop_subgraph(source_node, edge_index, k, title=None, save_path=None):
     """
     Draws the k-hop subgraph around `source_node` using networkx.
@@ -230,42 +212,86 @@ def visualize_khop_subgraph(source_node, edge_index, k, title=None, save_path=No
     plt.show()
 
 
-# =============================================================
-# MAIN
-# =============================================================
-def main():
-    # ---- Config ----
-    max_k = 10
-    source_node = 0          # node to inspect individually
-    subgraph_k = 4           # how many hops to draw explicitly
+def visualize_khop_neighborhood(G, center_node, k=2, figsize=(10, 8), seed=42):
+    """
+    Visualize the k-hop neighborhood of a given node in a networkx graph G,
+    coloring each node by its hop distance from center_node.
+    """
+    if center_node not in G:
+        raise ValueError(f"Node {center_node} not in graph")
 
-    # ---- Step 1 & 2: Load + verify largest connected component ----
-    citeseer, data = load_citeseer_largest_cc()
-    verify_largest_cc(data)
+    khop_nodes = nx.single_source_shortest_path_length(G, center_node, cutoff=k)
+    subG = G.subgraph(khop_nodes.keys()).copy()
+    distances = [khop_nodes[n] for n in subG.nodes()]
+
+    pos = nx.spring_layout(subG, seed=seed)
+
+    plt.figure(figsize=figsize)
+    nodes = nx.draw_networkx_nodes(
+        subG, pos,
+        node_color=distances,
+        cmap=plt.cm.viridis_r,
+        node_size=300,
+        linewidths=1,
+        edgecolors="black",
+    )
+    nx.draw_networkx_edges(subG, pos, alpha=0.4)
+    nx.draw_networkx_nodes(subG, pos, nodelist=[center_node], node_color="red", node_size=500)
+    nx.draw_networkx_labels(subG, pos, font_size=7)
+
+    plt.colorbar(nodes, label="Hop distance from center node")
+    plt.title(f"{k}-hop neighborhood of node {center_node} "
+              f"({subG.number_of_nodes()} nodes, {subG.number_of_edges()} edges)")
+    plt.axis("off")
+    plt.tight_layout()
+    plt.show()
+
+    return subG
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--dataset", choices=["cora", "citeseer"], default="cora")
+    parser.add_argument("--max-k", type=int, default=10, help="Max hop count for growth curves.")
+    parser.add_argument("--source-node", type=int, default=0, help="Node to inspect individually.")
+    parser.add_argument("--subgraph-k", type=int, default=4, help="Hops to draw explicitly around --source-node.")
+    args = parser.parse_args()
+
+    dataset_name = DATASET_NAMES[args.dataset]
+
+    # ---- Load + verify largest connected component ----
+    ds, data = load_largest_cc(dataset_name)
+    verify_largest_cc(dataset_name, data)
 
     num_nodes = data.num_nodes
     edge_index = data.edge_index
 
     print(f"Working graph: {num_nodes} nodes, {edge_index.shape[1]} directed edges\n")
 
-    # ---- Step 3 & 7: Single-node analysis ----
-    print(f"Computing k-hop counts for single node {source_node}...")
-    single_counts = compute_khop_counts_single_node(source_node, edge_index, max_k)
-    print(f"Node {source_node} reachable counts per k: {single_counts}\n")
-    plot_single_node_growth(source_node, single_counts)
+    # ---- Hop-distance-colored neighborhood around the source node ----
+    G = to_networkx(data, to_undirected=True)
+    visualize_khop_neighborhood(G, center_node=args.source_node, k=args.subgraph_k)
 
-    # ---- Step 8: Draw actual subgraph around that node ----
-    visualize_khop_subgraph(source_node, edge_index, k=subgraph_k)
+    # ---- Single-node growth curve ----
+    print(f"Computing k-hop counts for single node {args.source_node}...")
+    single_counts = compute_khop_counts_single_node(args.source_node, edge_index, args.max_k)
+    print(f"Node {args.source_node} reachable counts per k: {single_counts}\n")
+    plot_single_node_growth(args.source_node, single_counts)
 
-    # ---- Step 4, 5, 6: Graph-wide analysis (average over ALL nodes) ----
+    # ---- Highlighted subgraph around that node ----
+    visualize_khop_subgraph(args.source_node, edge_index, k=args.subgraph_k)
+
+    # ---- Graph-wide analysis (average over ALL nodes) ----
     print("Computing k-hop counts for ALL nodes (this may take a bit)...")
-    reachable_counts = compute_khop_counts_all_nodes(num_nodes, edge_index, max_k)
+    reachable_counts = compute_khop_counts_all_nodes(num_nodes, edge_index, args.max_k)
     summary_df = summarize_khop_counts(reachable_counts)
 
     print("\nSummary (averaged over all nodes):")
     print(summary_df)
 
-    plot_average_growth(summary_df, title="Average k-hop growth (CiteSeer, largest CC)")
+    plot_average_growth(summary_df, title=f"Average k-hop growth ({dataset_name}, largest CC)")
 
 
 if __name__ == "__main__":
