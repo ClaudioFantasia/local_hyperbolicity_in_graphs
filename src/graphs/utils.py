@@ -6,6 +6,7 @@ import random
 def create_graph(type, seed = 42, **kwargs):
     """
     Universal graph creator using keyword arguments (e.g. from yaml)
+    It return the networkX graph and the pos to visualise it
     """
     n = kwargs.get('n', 10)
     p = kwargs.get('p', 0.1)
@@ -179,38 +180,6 @@ def create_geometric_graph(n,radius,dim=2, seed=42):
     pos = {node[0]: node[1]['pos'] for node in G.nodes(data=True)}
     return G,pos 
 
-
-def compute_distance_nodes(G):
-    """
-    Compute the distances between nodes using shortest path as metric
-    """
-    nodes = list(G.nodes())
-    index = {node: i for i, node in enumerate(nodes)}
-    n = len(nodes)
-
-    dist = np.full((n, n), np.inf)
-
-    for u, lengths in nx.all_pairs_shortest_path_length(G):
-        i = index[u]
-        for v, d in lengths.items():
-            j = index[v]
-            dist[i, j] = d
-
-    return dist
-
-
-def save_graph(G, filename):
-    with open(filename, 'wb') as f:
-        pickle.dump(G, f)
-    print(f"Saved graph in {filename}.")
-
-def load_graph(filename):
-    with open(filename, 'rb') as f:
-        G = pickle.load(f)
-    return G
-
-
-
 def make_cycle(n, start=0):
     """C_n with nodes labeled start..start+n-1."""
     G = nx.cycle_graph(n)
@@ -262,3 +231,14 @@ def make_tree_with_grid(height_tree, leaves_per_node, size_grid):
     bridge_tree_node = n_grid     # root of the tree (was 0, now n_grid)
     hybrid.add_edge(bridge_grid_node, bridge_tree_node)
     return hybrid
+
+
+def save_graph(G, filename):
+    with open(filename, 'wb') as f:
+        pickle.dump(G, f)
+    print(f"Saved graph in {filename}.")
+
+def load_graph(filename):
+    with open(filename, 'rb') as f:
+        G = pickle.load(f)
+    return G

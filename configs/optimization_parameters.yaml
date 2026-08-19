@@ -1,9 +1,12 @@
 graph:
-  type: "tree_with_grid" 
+  type: "cora"
   # star,tree, cycle, path, complete, erdos_reyni, lattice
   # sbm, geometric, tree_of_cycles, tree_with_grid
   # molecule_like, hierarchical
-  n : 100
+  # cora, citeseer, pubmed -> un pezzo di n nodi del grafo reale
+  n : 50
+  source_node : 0 # cora/citeseer/pubmed: nodo LCC da cui parte la BFS del patch
+                     # (null -> nodo a caso). Sono gli id della LCC, non quelli originali
   p : 0.1 # Erdos-Reyni
   sizes : [25,25] # SBM
   p_intra : [0.3,0.3,0.3] # SBM 
@@ -16,11 +19,16 @@ graph:
   size_grid : 4 # tree with grid
   random_edges_added : 0 # hierarchical 
 optimization:
-  temperature: 0.1
-  geometric_temperature : 5
+  temperature: 0.5      # beta: KL regularisation strength
+  geometric_temperature : 1  # T_geom: how fast gamma_v decays with distance
   lambda_reg: 0.5
   alpha_diffusion: 2
   sigma : 10
   time : 5
-  target_nodes : [0]
-  k : 10
+  target_nodes : [0,1,2]
+  k : 4
+  strategy : "increasing_neighborhood"  # or "increasing_neighborhood"
+  m : 5                   # max neighbors per hop, only for increasing_neighborhood
+run:
+  plot : true
+  save_dir : "data/newFig"   # set to null to only show the figures

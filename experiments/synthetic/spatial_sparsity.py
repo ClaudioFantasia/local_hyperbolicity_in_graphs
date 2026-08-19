@@ -1,137 +1,144 @@
+"""
+Which nodes drive the local hyperbolicity of a given target node?
+
+For each node v in optimization.target_nodes we build the k-hop
+neighborhood, enumerate/sample its 4-tuples, solve for the optimal
+distribution mu over those quads (same KL formulation as
+run_experiment.py / KL_score), and then push each quad's mass back onto
+its four nodes:
+
+    contribution(j) = sum_{i : j in h_i} mu_i
+
+Nodes sitting in many high-mu quads light up -- those are the ones
+responsible for v's G*(v) value. Everything is read from
+configs/optimization_parameters.yaml, like run_experiment.py.
+
+    python experiments/synthetic/spatial_sparsity.py
+"""
+
 import os
 import sys
 import time
-import itertools
-import math
-import argparse
 
-import networkx as nx
 import numpy as np
-from tqdm import tqdm
-from scipy.special import softmax
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from src.graphs.utils import compute_distance_nodes, create_graph
+from src.graphs.utils import create_graph
 from src.graphs.visualization import draw_graph_with_values, plot_hist
-from src.utils.config import load_optimization_config, load_graph_config
-from src.optimization.local import _get_quads_and_energies, new_score_KL_divergence, score_entropic, score_softing, score_KL_divergence_batched
-from src.optimization.objectives import gromov_energy, normalize
-from src.optimization.solver import solve_KL_regularization, solve_entropic_regularization
+from src.optimization.local import KL_score
+from src.optimization.neighborhood import get_neighborhood, sampling_quads
+from src.optimization.objectives import (compute_distance_nodes, gamma_distribution,
+                                         gromov_energy)
+from src.optimization.solver import solve_KL_regularization
+from src.utils.config import REPO_ROOT, load_config
 
-def compute_local_mu(target, dist_matrix, k, temperature, geometric_temperature, lambda_reg, sigma, method):
-    neighborhood = np.where(dist_matrix[target] <= k)[0]
-    quads = list(itertools.combinations(neighborhood, 4))
-    if not quads:
-        return quads, np.array([])
-    
-    e_gromov = gromov_energy(quads, dist_matrix)
-    if method == "KL_divergence":
-        w_local = np.max(dist_matrix[np.array(quads), target], axis=1)
-        w_local = softmax(-1 * w_local / geometric_temperature)
-        mu = solve_KL_regularization(e_gromov, w_local, temperature)
-    elif method == "entropic":
-        e_gromov_norm = e_gromov
-        w_local = np.max(dist_matrix[np.array(quads), target], axis=1)
-        cost = e_gromov_norm - lambda_reg * w_local
-        mu = solve_entropic_regularization(cost, temperature)
-    else:
-        raise ValueError(f"Method {method} does not support spatial sparsity analysis.")
+cfg = load_config()
+graph_cfg = cfg["graph"]
+opt = cfg["optimization"]
+run = cfg["run"]
 
-    return quads, mu
+k = opt["k"]
+temperature = opt["temperature"]
+geometric_temperature = opt["geometric_temperature"]
+strategy = opt["strategy"]
+m = opt["m"]
 
-
-def compute_node_contributions(quads, mu, n_nodes):
-    contributions = np.zeros(n_nodes)
-    for i, quad in enumerate(quads):
-        for node in quad:
-            contributions[node] += mu[i]
-    return contributions
-
-
-def compute_local_scores(G, quad_cache, k, temperature, geometric_temperature, lambda_reg, sigma, method_name):
-    nodes = list(G.nodes())
-    if method_name == "KL_divergence":
-        return np.array([
-            new_score_KL_divergence(G, n, quad_cache, k, temperature, geometric_temperature)
-            for n in tqdm(nodes, desc="Computing local scores (KL_divergence)")
-        ])
-    elif method_name == "entropic":
-        return np.array([
-            score_entropic(n, dist_matrix, quad_cache, k, temperature, lambda_reg)
-            for n in tqdm(nodes, desc="Computing local scores (entropic)")
-        ])
-    elif method_name == "softing":
-        return np.array([
-            score_softing(n, dist_matrix, quad_cache, k, sigma)
-            for n in tqdm(nodes, desc="Computing local scores (softing)")
-        ])
-    return np.zeros(len(nodes))
-
-def visualize_results(G, pos, node_contributions, mu, scores, target, k, temperature, save_dir):
-    draw_graph_with_values(G, pos, node_contributions,
-                           title=f"Mu Heatmap (target={target})",
-                           save_path=os.path.join(save_dir, f"{target}_{k}_contributions.png"))
-
-    plot_hist(mu,
-              title=f"Mu distribution (mean={mu.mean():.8f}, var={mu.var():.8f})",
-              bins=20,
-              save_path=os.path.join(save_dir, f"{target}_{k}_mu.png"))
-
-    draw_graph_with_values(G, pos, scores,
-                           title="Local Hyperbolicity Heatmap",
-                           save_path=None)
-                           #save_path=os.path.join(save_dir, f"{k}_hop_T{temperature}.png"))
-
-    plot_hist(scores,
-              title=f"Local Hyperbolicity (mean={scores.mean():.8f}, var={scores.var():.8f})",
-              bins=20)
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Run Local Hyperbolicity Experiments")
-    parser.add_argument("--method", type=str, required=True, 
-                        choices=["KL_divergence", "entropic","softing"],
-                        help="The aggregation method to use.")
-    args = parser.parse_args()
-    method_name = args.method
-
-    temperature, geometric_temperature, lambda_reg, sigma, k, target = load_optimization_config()
-    graph_cfg = load_graph_config()
-    G, pos = create_graph(**graph_cfg)
-    graph_type = graph_cfg['type']
-    dist_matrix = compute_distance_nodes(G)
-    print(f"Graph diameter: {nx.diameter(G)}")
-
-    nodes = sorted(G.nodes())
-    quad_cache = {}
-
-    
-    save_dir = os.path.join('data', 'LSE', graph_type, method_name)
-    if method_name == 'KL_divergence':
-        save_dir = os.path.join(save_dir, f"geometric_temp_{geometric_temperature}")
-    elif method_name == 'entropic':
-        save_dir = os.path.join(save_dir, f"lambda_{lambda_reg}")
-    elif method_name == 'softing':
-        save_dir = os.path.join(save_dir, f"sigma_{sigma}")
+save_dir = run["save_dir"]
+if save_dir is not None:
+    save_dir = os.path.join(REPO_ROOT, save_dir, graph_cfg["type"], "spatial_sparsity")
     os.makedirs(save_dir, exist_ok=True)
-    
+
+print(f"Graph: {graph_cfg['type']}  |  k={k}  temperature={temperature}  "
+      f"geometric_temperature={geometric_temperature}  strategy={strategy}")
+
+G, pos = create_graph(**graph_cfg)
+nodes = list(G.nodes())
+dist_matrix, index = compute_distance_nodes(G)
+n_nodes = len(nodes)
+
+tag = f"k{k}_T{temperature}_Tgeom{geometric_temperature}"
+
+# same whole-graph G*(v) heatmap as run_experiment.py, for context:
+# the per-target contribution maps below explain one node of this picture
+t0 = time.perf_counter()
+quad_cache = {}
+scores = np.array([
+    KL_score(G, index[v], quad_cache, k, temperature, geometric_temperature,
+             dist_matrix, strategy, m)
+    for v in nodes
+])
+if scores.ndim == 2 and scores.shape[1] == 1:
+    scores = scores[:, 0]
+print(f"Scored {n_nodes} nodes in {time.perf_counter() - t0:.2f}s")
+
+if run["plot"]:
+    scores_path = os.path.join(save_dir, f"heatmap_{tag}.png") if save_dir else None
+    draw_graph_with_values(
+        G, pos, scores,
+        title=(f"Local hyperbolicity $G^*(v)$ -- {graph_cfg['type']} "
+               f"(n={G.number_of_nodes()}, |E|={G.number_of_edges()})\n"
+               f"k={k}, $\\beta$={temperature}, $T_{{geom}}$={geometric_temperature}, "
+               f"strategy={strategy}\n"
+               f"range [{scores.min():.3f}, {scores.max():.3f}], "
+               f"mean={scores.mean():.3f}"),
+        save_path=scores_path,
+    )
+
+for target in opt["target_nodes"]:
     t0 = time.perf_counter()
 
-    quads, mu = compute_local_mu(target, dist_matrix, k, temperature, geometric_temperature, lambda_reg, sigma, method_name)
-    node_contributions = np.zeros(shape=(100,))
-    mu = np.zeros(shape=(100,))
-    scores = compute_local_scores(G, quad_cache, k, temperature, geometric_temperature, lambda_reg, sigma, method_name)
+    neighborhood = get_neighborhood(G, index[target], k, strategy=strategy, m=m)
+    quads = sampling_quads(neighborhood)
+    deltas = gromov_energy(quads, dist_matrix)
+    gamma = gamma_distribution(quads, dist_matrix, index[target],
+                               geometric_temperature)
+    mu = solve_KL_regularization(deltas, gamma, temperature)
+
+    # G*(v) = <mu, delta> - beta * KL(mu || gamma), the value mu attains
+    score = mu @ deltas - temperature * np.sum(
+        mu * np.log(np.clip(mu, 1e-16, None) / np.clip(gamma, 1e-16, None)))
+
+    # spread each quad's mass over its four nodes:
+    #   contribution[j] = sum_{i : j in h_i} mu_i
+    contribution = np.zeros(n_nodes)
+    for i, quad in enumerate(quads):
+        for node in quad:
+            contribution[node] += mu[i]
 
     elapsed = time.perf_counter() - t0
-    print(f"{method_name} {k}-hop done in {elapsed:.2f}s")
-    print(f"Cache size: {len(quad_cache)} vs theoretical max {math.comb(len(nodes), 4)}")
-    draw_graph_with_values(G, pos, scores,
-                           title="Local Hyperbolicity Heatmap",
-                           save_path=None)
-    visualize_results(G, pos, node_contributions, mu, scores, target, k, temperature, save_dir=None)
+    print(f"\nnode {target}: {len(neighborhood)}-node {k}-hop, {len(quads)} quads, "
+          f"G*={score:.3f}  ({elapsed:.2f}s)")
 
+    order = np.argsort(contribution)[::-1]
+    print("  top contributors (node: mu mass):")
+    for i in order[:10]:
+        print(f"    {nodes[i]}: {contribution[i]:.4f}")
 
+    if not run["plot"]:
+        continue
 
-if __name__ == "__main__":
-    main()
+    heat_path = os.path.join(save_dir, f"contrib_node{target}_{tag}.png") if save_dir else None
+    draw_graph_with_values(
+        G, pos, contribution,
+        title=(f"$\\mu$ mass per node -- target {target} ({graph_cfg['type']})\n"
+               f"k={k}, $\\beta$={temperature}, $T_{{geom}}$={geometric_temperature}, "
+               f"strategy={strategy}\n"
+               f"|H|={len(quads)} quads, $G^*$={score:.3f}, "
+               f"top node {nodes[order[0]]} ({contribution[order[0]]:.3f})"),
+        save_path=heat_path,
+    )
+
+    contrib_path = os.path.join(save_dir, f"hist_node{target}_{tag}.png") if save_dir else None
+    plot_hist(
+        contribution,
+        title=(f"Node contributions -- target {target} ({graph_cfg['type']})\n"
+               f"mean={contribution.mean():.2e}, max={contribution.max():.2e}"),
+        xlabel="$\\sum_{i : j \\in h_i} \\mu_i$",
+        ylabel="number of nodes (log scale)",
+        bins=30,
+        save_path=contrib_path,
+    )
+
+if save_dir:
+    print(f"\nFigures saved in {save_dir}")
