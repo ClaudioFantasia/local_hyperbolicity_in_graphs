@@ -24,21 +24,24 @@ Synthetic-graph experiments (driven by `configs/optimization_parameters.yaml`):
 python experiments/run_experiment.py --method entropic
 ```
 
-Cora / CiteSeer pipeline (`experiments/citation/`, select the dataset with
-`--dataset cora|citeseer`):
+Dataset pipeline (`experiments/datasets/`, select the dataset with
+`--dataset cora|citeseer|mutag|...`):
 
 ```bash
-# 1. Compute per-node local hyperbolicity scores -> <dataset>_node_metrics.csv
-python experiments/citation/generate_hyperbolic_features.py --dataset cora
+# 1. Compute per-node local hyperbolicity scores
+#    -> data/hyperbolic_features/<dataset>_node_metrics.csv
+python experiments/datasets/generate_features.py --dataset cora
 
-# 2. Train a GCN baseline (bag-of-words / custom features / both)
-python experiments/citation/node_classification.py --dataset cora --features bow
+# 2. Train a GCN baseline (bag-of-words / custom features / both).
+#    --curves salva le curve per epoca in data/curves/, con nome automatico
+python experiments/datasets/node_classification.py --dataset cora --features bow --curves
 
-# 3. k-hop neighborhood plots
-python experiments/citation/visualize.py --dataset cora
+# 3. Link prediction, e classificazione di grafi sui dataset TU
+python experiments/datasets/link_prediction.py --dataset cora --features concat
+python experiments/datasets/graph_classification.py --dataset mutag --features concat
 
-# 4. Cora-only link prediction baseline (heuristics + a small GCN)
-python experiments/citation/link_prediction_baseline.py
+# 4. Plot delle curve salvate al punto 2
+python experiments/datasets/plot_curves.py data/curves/nodeclass_cora_gcn_bow.csv
 ```
 
 ZINC molecular regression (self-contained, not wired to the hyperbolicity code):

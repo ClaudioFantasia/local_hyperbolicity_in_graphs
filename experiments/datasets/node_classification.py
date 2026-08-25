@@ -7,8 +7,8 @@ features.
 Feature modes (--features):
     bow     the dataset's bag-of-words features
     custom  the per-node hyperbolicity profile from
-            <dataset>_node_metrics.csv (or any file passed with
-            --custom-features-path)
+            data/hyperbolic_features/<dataset>_node_metrics.csv (or any
+            file passed with --custom-features-path)
     concat  bow ++ custom
 --add-degree appends node degree on top of whichever mode is picked, and
 --custom-num-features m keeps only the first m columns of the custom file.
@@ -20,8 +20,9 @@ Usage
     python experiments/datasets/node_classification.py --dataset citeseer \\
         --features custom --custom-num-features 8 --add-degree
 
---custom-features-path defaults to <dataset>_node_metrics.csv next to this
-script (what generate_features.py writes).
+--custom-features-path defaults to
+data/hyperbolic_features/<dataset>_node_metrics.csv (what
+generate_features.py writes).
 
 --seeds picks how many runs to average (default 10). A seed fixes BOTH
 the train/val/test split and the model init, so running the same --seeds
@@ -43,8 +44,8 @@ from torch_geometric.nn import GCNConv
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from common import (DATASETS, build_features, load_lcc, metrics_path,
-                    node_degrees)
+from common import (DATASETS, build_features, curves_path, feature_tag,
+                    load_lcc, metrics_path, node_degrees, write_curves)
 
 
 class GCN(torch.nn.Module):
@@ -61,6 +62,26 @@ class GCN(torch.nn.Module):
     def forward(self, x, edge_index):
         for i, layer in enumerate(self.layers):
             x = layer(x, edge_index)
+            if i != len(self.layers) - 1:
+                x = F.relu(x)
+                x = F.dropout(x, p=self.dropout, training=self.training)
+        return x
+
+
+class MLP(torch.nn.Module):
+    """Same shape as GCN but no message passing: ignores edge_index."""
+
+    def __init__(self, in_dim, hidden_dim, out_dim, num_layers=3, dropout=0.5):
+        super().__init__()
+        dims = [in_dim] + [hidden_dim] * (num_layers - 1) + [out_dim]
+        self.layers = torch.nn.ModuleList([
+            torch.nn.Linear(dims[i], dims[i + 1]) for i in range(len(dims) - 1)
+        ])
+        self.dropout = dropout
+
+    def forward(self, x, edge_index=None):
+        for i, layer in enumerate(self.layers):
+            x = layer(x)
             if i != len(self.layers) - 1:
                 x = F.relu(x)
                 x = F.dropout(x, p=self.dropout, training=self.training)
@@ -84,25 +105,27 @@ def make_splits(num_nodes, seed, train_frac=0.5, val_frac=0.25):
 
 
 def train(model, edge_index, x, y, masks, task, args, device, verbose):
-    """Adam + ReduceLROnPlateau, early stopping on the validation metric.
-    Returns (best val, test at that point)."""
+    """Adam, early stopping on the validation metric.
+    Returns (best val, test at that point, per-epoch history)."""
     train_mask, val_mask, test_mask = [m.to(device) for m in masks]
     model = model.to(device)
     x, y, edge_index = x.to(device), y.to(device), edge_index.to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
                                  weight_decay=args.weight_decay)
-    # patience=25 (and the default factor=0.1) come from the Local Curvature
-    # Profile protocol this pipeline was originally matched against; kept for
-    # compatibility with those numbers. Measured on cora/citeseer with the
-    # defaults below it is a no-op: it only fires 26 epochs past the val peak,
-    # so the reduced lr never sets a new record and both the best metric and
-    # the stopping epoch are identical with and without it.
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=25)
+    # niente lr scheduler. Il ReduceLROnPlateau(patience=25, factor=0.1) del
+    # protocollo Local Curvature Profile, contro cui questa pipeline era stata
+    # allineata, qui e' un no-op: misurato su cora/citeseer con i default qui
+    # sotto scatta 26 epoche dopo il picco di validazione, quindi la lr ridotta
+    # non stabilisce mai un nuovo record -- stessa metrica migliore e stessa
+    # epoca di stop con e senza.
     metric_name = "acc" if task == "classification" else "mse"
 
     best_val, best_test = (0.0, 0.0) if task == "classification" else (inf, inf)
     epochs_no_improve = 0
+    # loss e metriche su train/val/test sono gia' calcolate a ogni epoca qui
+    # sotto: registrarle non costa niente in piu'
+    history = []
 
     for epoch in range(1, args.epochs + 1):
         model.train()
@@ -115,21 +138,29 @@ def train(model, edge_index, x, y, masks, task, args, device, verbose):
         loss.backward()
         optimizer.step()
 
+        # tutte e tre le loss sono misurate qui, in eval mode (dropout off):
+        # la train loss di questo blocco e' quindi confrontabile con val/test,
+        # a differenza della `loss` ottimizzata sopra che ha il dropout attivo
         model.eval()
         with torch.no_grad():
             out = model(x, edge_index)
             if task == "classification":
+                train_loss = F.cross_entropy(out[train_mask], y[train_mask]).item()
+                val_loss = F.cross_entropy(out[val_mask], y[val_mask]).item()
+                test_loss = F.cross_entropy(out[test_mask], y[test_mask]).item()
                 pred = out.argmax(dim=1)
                 train_m = (pred[train_mask] == y[train_mask]).float().mean().item()
                 val_m = (pred[val_mask] == y[val_mask]).float().mean().item()
                 test_m = (pred[test_mask] == y[test_mask]).float().mean().item()
             else:
                 pred = out.squeeze(-1)
-                train_m = F.mse_loss(pred[train_mask], y[train_mask]).item()
-                val_m = F.mse_loss(pred[val_mask], y[val_mask]).item()
-                test_m = F.mse_loss(pred[test_mask], y[test_mask]).item()
+                # in regressione la metrica *e'* la loss
+                train_loss = train_m = F.mse_loss(pred[train_mask], y[train_mask]).item()
+                val_loss = val_m = F.mse_loss(pred[val_mask], y[val_mask]).item()
+                test_loss = test_m = F.mse_loss(pred[test_mask], y[test_mask]).item()
 
-        scheduler.step(val_m if task == "regression" else -val_m)
+        history.append((epoch, train_loss, val_loss, test_loss,
+                        train_m, val_m, test_m))
 
         if task == "classification":
             improved = val_m > best_val * args.stopping_threshold if best_val > 0 else True
@@ -143,7 +174,8 @@ def train(model, edge_index, x, y, masks, task, args, device, verbose):
             epochs_no_improve += 1
 
         if verbose and (epoch % 20 == 0 or epoch == 1):
-            print(f"epoch {epoch:03d} | loss {loss.item():.4f} | "
+            print(f"epoch {epoch:03d} | loss train {train_loss:.4f} "
+                  f"val {val_loss:.4f} test {test_loss:.4f} | "
                   f"train {metric_name} {train_m:.4f} | val {metric_name} {val_m:.4f} | "
                   f"test {metric_name} {test_m:.4f}")
 
@@ -152,21 +184,31 @@ def train(model, edge_index, x, y, masks, task, args, device, verbose):
                 print(f"Early stopping at epoch {epoch} (patience={args.patience})")
             break
 
-    return best_val, best_test
+    return best_val, best_test, history
 
 
 parser = argparse.ArgumentParser(
     description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 parser.add_argument("--dataset", choices=sorted(DATASETS), default="cora")
+parser.add_argument("--model", choices=["gcn", "mlp"], default="gcn",
+                    help="mlp ignores the graph entirely: same layer sizes, "
+                         "Linear instead of GCNConv.")
 parser.add_argument("--task", choices=["classification", "regression"],
                     default="classification")
-parser.add_argument("--features", choices=["bow", "custom", "concat"], default="bow")
+parser.add_argument("--features", choices=["bow", "custom", "concat", "degree"],
+                    default="bow")
 parser.add_argument("--custom-features-path", default=None,
-                    help="Defaults to <dataset>_node_metrics.csv next to this script.")
+                    help="Defaults to data/hyperbolic_features/"
+                         "<dataset>_node_metrics.csv.")
 parser.add_argument("--custom-num-features", type=int, default=None,
                     help="Keep only the first m columns of the custom feature file.")
 parser.add_argument("--add-degree", action="store_true",
                     help="Append node degree as one extra feature column.")
+parser.add_argument("--standardize-custom", action="store_true",
+                    help="Zero-mean / unit-variance each custom feature column. "
+                         "The hyperbolicity columns carry a large constant "
+                         "offset that holds no per-node information; on link "
+                         "prediction removing it is worth ~10pp of AUC.")
 parser.add_argument("--custom-targets-path", default=None,
                     help="Per-node regression target; --task regression only.")
 parser.add_argument("--num-layers", type=int, default=2)
@@ -185,6 +227,12 @@ parser.add_argument("--weight-decay", type=float, default=5e-4)
 parser.add_argument("--dropout", type=float, default=0.5)
 parser.add_argument("--seeds", default="0,1,2,3,4,5,6,7,8,9",
                     help="Comma-separated; one run per seed, results averaged.")
+parser.add_argument("--curves", nargs="?", const="auto", default=None,
+                    help="Salva la storia per epoca (seed, epoch, "
+                         "train/val/test loss, train/val/test metric) di ogni "
+                         "seed. Da solo sceglie il nome in base al run: "
+                         "data/curves/nodeclass_<dataset>_<model>_<features>.csv. "
+                         "Con un path scrive li'. Si plotta con plot_curves.py.")
 parser.add_argument("--dump-node-map", default=None,
                     help="Write the LCC node_map (original node ids, in the "
                          "order feature rows are expected) to this .npy and exit.")
@@ -202,14 +250,15 @@ if args.dump_node_map is not None:
     sys.exit()
 
 custom_path = args.custom_features_path
-if custom_path is None and args.features != "bow":
+if custom_path is None and args.features in ("custom", "concat"):
     custom_path = metrics_path(args.dataset)
 
 # feature/target construction has no randomness in it, so it happens once
 # and is reused unchanged across every seed
 x = build_features(args.features, data.x, data.edge_index, num_nodes,
                    custom_path=custom_path, num_custom=args.custom_num_features,
-                   add_degree=args.add_degree)
+                   add_degree=args.add_degree,
+                   standardize_custom=args.standardize_custom)
 
 if args.task == "classification":
     y, out_dim = data.y, int(data.y.max()) + 1
@@ -223,24 +272,30 @@ else:
 
 trunc = f" (first {args.custom_num_features} custom dims)" if args.custom_num_features else ""
 degree_note = " + degree" if args.add_degree else ""
-print(f"\n{args.dataset} | {args.task} | features: {args.features}{trunc}{degree_note} "
+std_note = " [custom standardizzate]" if args.standardize_custom else ""
+print(f"\n{args.dataset} | {args.model} | {args.task} | features: {args.features}{trunc}"
+      f"{degree_note}{std_note} "
       f"(dim={x.shape[1]}) | {num_nodes} nodes | seeds {seeds}")
 
 metric_name = "acc" if args.task == "classification" else "mse"
 val_scores, test_scores = [], []
+curve_rows = []
 
 for seed in seeds:
     torch.manual_seed(seed)
     np.random.seed(seed)
 
     masks = make_splits(num_nodes, seed=seed)
-    model = GCN(x.shape[1], args.hidden_dim, out_dim,
+    net = GCN if args.model == "gcn" else MLP
+    model = net(x.shape[1], args.hidden_dim, out_dim,
                 num_layers=args.num_layers, dropout=args.dropout)
 
-    best_val, best_test = train(model, data.edge_index, x, y, masks, args.task,
-                                args, device, verbose=(len(seeds) == 1))
+    best_val, best_test, history = train(model, data.edge_index, x, y, masks,
+                                         args.task, args, device,
+                                         verbose=(len(seeds) == 1))
     val_scores.append(best_val)
     test_scores.append(best_test)
+    curve_rows += [(seed,) + row for row in history]
     print(f"seed {seed:>3d} | val {metric_name} {best_val:.4f} | "
           f"test {metric_name} {best_test:.4f}")
 
@@ -248,3 +303,22 @@ val_scores, test_scores = np.array(val_scores), np.array(test_scores)
 print(f"\nAcross {len(seeds)} seed(s):")
 print(f"  val  {metric_name}: {val_scores.mean():.4f} +/- {val_scores.std():.4f}")
 print(f"  test {metric_name}: {test_scores.mean():.4f} +/- {test_scores.std():.4f}")
+
+if args.curves:
+    if args.curves == "auto":
+        tag = feature_tag(args)
+        if args.task == "regression":
+            tag += "-reg"
+        args.curves = curves_path("nodeclass", args.dataset, args.model, tag)
+
+    if args.task == "classification":
+        write_curves(args.curves,
+                     ["seed", "epoch", "train_loss", "val_loss", "test_loss",
+                      "train_acc", "val_acc", "test_acc"],
+                     curve_rows)
+    else:
+        # qui metrica e loss coincidono: le colonne delle metriche sarebbero
+        # tre duplicati, quindi tengo solo le loss
+        write_curves(args.curves,
+                     ["seed", "epoch", "train_mse", "val_mse", "test_mse"],
+                     [row[:5] for row in curve_rows])

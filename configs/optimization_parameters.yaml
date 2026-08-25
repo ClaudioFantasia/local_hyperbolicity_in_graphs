@@ -1,12 +1,15 @@
 graph:
-  type: "cora"
+  type: "mutag"
   # star,tree, cycle, path, complete, erdos_reyni, lattice
   # sbm, geometric, tree_of_cycles, tree_with_grid
   # molecule_like, hierarchical
   # cora, citeseer, pubmed -> un pezzo di n nodi del grafo reale
+  # mutag, proteins, enzymes, nci1, imdb-binary -> il grafo graph_index del
+  #   benchmark TU, preso intero (sono da 10-30 nodi)
   n : 50
   source_node : 0 # cora/citeseer/pubmed: nodo LCC da cui parte la BFS del patch
                      # (null -> nodo a caso). Sono gli id della LCC, non quelli originali
+  graph_index : 0 # mutag/proteins/...: quale grafo del benchmark scorare
   p : 0.1 # Erdos-Reyni
   sizes : [25,25] # SBM
   p_intra : [0.3,0.3,0.3] # SBM 
@@ -19,15 +22,15 @@ graph:
   size_grid : 4 # tree with grid
   random_edges_added : 0 # hierarchical 
 optimization:
-  temperature: 0.5      # beta: KL regularisation strength
+  temperature: 0.1      # beta: KL regularisation strength
   geometric_temperature : 1  # T_geom: how fast gamma_v decays with distance
   lambda_reg: 0.5
   alpha_diffusion: 2
   sigma : 10
   time : 5
-  target_nodes : [0,1,2]
-  k : 4
-  strategy : "increasing_neighborhood"  # or "increasing_neighborhood"
+  target_nodes : []
+  k : 50
+  strategy : "full_neighborhood"  # or "increasing_neighborhood"
   m : 5                   # max neighbors per hop, only for increasing_neighborhood
 run:
   plot : true
