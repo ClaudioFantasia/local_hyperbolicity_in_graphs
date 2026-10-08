@@ -86,7 +86,7 @@ sizes = [d.num_nodes for d in graphs]
 labels = np.array([int(d.y) for d in graphs])
 
 profiles = load_graph_node_features(
-    args.custom_features_path or metrics_path(args.dataset), sizes)
+    metrics_path(args.dataset, args.custom_features_path), sizes)
 
 # un grafo -> un vettore. Le statistiche sono quelle che il sum pooling
 # della GIN non puo' vedere: la somma sui nodi conserva (a meno della

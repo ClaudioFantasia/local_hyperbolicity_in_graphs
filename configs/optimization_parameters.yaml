@@ -1,19 +1,33 @@
 graph:
-  type: "mutag"
-  # star,tree, cycle, path, complete, erdos_reyni, lattice
+  type: "star"
+  # star,tree, cycle, path, complete, erdos_renyi, lattice
   # sbm, geometric, tree_of_cycles, tree_with_grid
   # molecule_like, hierarchical
-  # cora, citeseer, pubmed -> un pezzo di n nodi del grafo reale
+  # cora, citeseer, pubmed -> il vicinato patch_k-hop di source_node nel grafo
+  #   reale, campionato secondo patch_strategy
   # mutag, proteins, enzymes, nci1, imdb-binary -> il grafo graph_index del
   #   benchmark TU, preso intero (sono da 10-30 nodi)
-  n : 50
-  source_node : 0 # cora/citeseer/pubmed: nodo LCC da cui parte la BFS del patch
+  n : 7
+  source_node : 0 # cora/citeseer/pubmed: nodo LCC da cui parte il patch
                      # (null -> nodo a caso). Sono gli id della LCC, non quelli originali
+  patch_k : 10      # cora/citeseer/pubmed: raggio del patch, in hop
+  patch_strategy : "forest_fire"  # quanta parte della palla patch_k-hop tenere:
+                     # "full_neighborhood"       -> tutta (attenzione agli hub)
+                     # "increasing_neighborhood" -> alla GraphSAGE, al piu' patch_m
+                     #                              vicini nuovi per nodo per hop
+                     # "forest_fire"             -> come sopra ma quanti bruciarne e'
+                     #                              casuale, Geometrica di media patch_m
+                     # "random_walk"             -> patch_m cammini casuali di patch_k
+                     #                              passi dalla sorgente
+                     # Vedi src/optimization/neighborhood.py
+  patch_m : 2.2        # vicini per nodo per hop (increasing_neighborhood, forest_fire),
+                     # oppure numero di cammini (random_walk)
   graph_index : 0 # mutag/proteins/...: quale grafo del benchmark scorare
-  p : 0.1 # Erdos-Reyni
-  sizes : [25,25] # SBM
-  p_intra : [0.3,0.3,0.3] # SBM 
-  p_inter : 0.002  # SBM
+  p : 0.2 # Erdos-Reyni
+  seed: 1
+  sizes : [15,15,15,15,15] # SBM
+  p_intra : [0.3,0.3,0.3,0.3,0.2] # SBM 
+  p_inter : 0.005  # SBM
   geometric_radius : 0.2 # random geometric
   tree_height : 3 # tree with grid, tree of cycles, hierarchical
   leaves_per_node : 2 # tree with grid, tree of cycles, hierarchical
@@ -22,13 +36,12 @@ graph:
   size_grid : 4 # tree with grid
   random_edges_added : 0 # hierarchical 
 optimization:
-  temperature: 0.1      # beta: KL regularisation strength
+  method : "KL_divergence"   # or "entropic" (cost = delta - lambda * d_v, no T_geom)
+                            # KL_divergence
+  temperature: 1      # beta: KL regularisation strength
   geometric_temperature : 1  # T_geom: how fast gamma_v decays with distance
-  lambda_reg: 0.5
-  alpha_diffusion: 2
-  sigma : 10
-  time : 5
-  target_nodes : []
+  lambda_loc : 0.1      # entropic only: weight of d_v in the cost (= temperature/T_geom)
+  target_nodes : [0]
   k : 50
   strategy : "full_neighborhood"  # or "increasing_neighborhood"
   m : 5                   # max neighbors per hop, only for increasing_neighborhood

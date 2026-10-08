@@ -210,7 +210,8 @@ parser.add_argument("--dataset", choices=sorted(DATASETS), default="cora")
 parser.add_argument("--features", choices=["bow", "custom", "concat", "degree"],
                     default="bow")
 parser.add_argument("--custom-features-path", default=None,
-                    help="Defaults to data/hyperbolic_features/"
+                    help="Un nome di file nudo lo cerca in "
+                         "data/hyperbolic_features/. Default: "
                          "<dataset>_node_metrics.csv.")
 parser.add_argument("--custom-num-features", type=int, default=None,
                     help="Keep only the first m columns of the custom feature file.")
@@ -246,9 +247,9 @@ seeds = [int(s) for s in args.seeds.split(",")]
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}\n")
 
-custom_path = args.custom_features_path
-if custom_path is None and args.features in ("custom", "concat"):
-    custom_path = metrics_path(args.dataset)
+custom_path = None
+if args.features in ("custom", "concat"):
+    custom_path = metrics_path(args.dataset, args.custom_features_path)
 
 data, node_map = load_lcc(args.dataset)
 

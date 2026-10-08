@@ -57,7 +57,7 @@ np.set_printoptions(threshold=np.inf)
 # row in the csv is the whole multi-scale profile.
 SCORE_PARAMS = {
     "cora": {
-        "k": 5,
+        "k": 4,
         "temperature": 0.1,
         "geometric_temperature": np.arange(0.1, 2.6, 0.1),
     },
@@ -96,7 +96,7 @@ SCORE_PARAMS = {
 # the node, from nearly-local (0.05) to nearly-global (2.50).
 TU_DEFAULT_PARAMS = {
     "k": 50,
-    "temperature": 0.1,
+    "temperature": 1,
     "geometric_temperature": np.arange(0.05, 2.51, 0.05),
 }
 

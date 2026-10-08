@@ -140,22 +140,27 @@ class GIN(torch.nn.Module):
         return self.lin(x)
 
 
-def accuracy(model, loader, device):
+def evaluate(model, loader, device):
+    """Cross entropy e accuratezza sul loader, in eval mode e in un solo
+    passaggio: la loss non costa niente in piu' dell'accuratezza."""
     model.eval()
-    correct = 0
+    total_loss, correct = 0.0, 0
     with torch.no_grad():
         for batch in loader:
             batch = batch.to(device)
-            pred = model(batch.x, batch.edge_index, batch.batch).argmax(dim=1)
-            correct += (pred == batch.y).sum().item()
-    return correct / len(loader.dataset)
+            out = model(batch.x, batch.edge_index, batch.batch)
+            total_loss += F.cross_entropy(out, batch.y, reduction="sum").item()
+            correct += (out.argmax(dim=1) == batch.y).sum().item()
+    n = len(loader.dataset)
+    return total_loss / n, correct / n
 
 
-def run_fold(model, train_loader, val_loader, test_loader, args, device):
+def run_fold(model, train_loader, val_loader, test_loader, args, device,
+             record=False):
     """Train until the selection metric stops improving (or the epoch
     budget runs out), tracking that metric.
-    Returns (val acc, test acc, epoch) at the selected epoch, plus the
-    per-epoch history."""
+    Returns (val acc, test acc, epoch) at the selected epoch, plus la
+    storia per epoca (vuota se record=False)."""
     model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
                                  weight_decay=args.weight_decay)
@@ -167,13 +172,10 @@ def run_fold(model, train_loader, val_loader, test_loader, args, device):
 
     best_selected, best_val, best_test, best_epoch = -1.0, 0.0, 0.0, 0
     epochs_no_improve = 0
-    # loss (media sui batch) e le due accuratezze sono gia' calcolate a ogni
-    # epoca qui sotto: registrarle non costa niente in piu'
     history = []
 
     for epoch in range(1, args.epochs + 1):
         model.train()
-        epoch_loss = 0.0
         for batch in train_loader:
             batch = batch.to(device)
             optimizer.zero_grad()
@@ -181,13 +183,19 @@ def run_fold(model, train_loader, val_loader, test_loader, args, device):
             loss = F.cross_entropy(out, batch.y)
             loss.backward()
             optimizer.step()
-            epoch_loss += loss.item() * batch.num_graphs
         scheduler.step()
 
-        val_acc = accuracy(model, val_loader, device)
-        test_acc = accuracy(model, test_loader, device)
-        history.append((epoch, epoch_loss / len(train_loader.dataset),
-                        val_acc, test_acc))
+        val_loss, val_acc = evaluate(model, val_loader, device)
+        test_loss, test_acc = evaluate(model, test_loader, device)
+
+        if record:
+            # anche train loss e accuratezza sono misurate in eval mode
+            # (dropout e batch norm spenti), cosi' sono confrontabili con
+            # val e test. E' un passaggio in piu' sul training set a ogni
+            # epoca, quindi lo faccio solo per il fold di cui salvo le curve
+            train_loss, train_acc = evaluate(model, train_loader, device)
+            history.append((epoch, train_loss, val_loss, test_loss,
+                            train_acc, val_acc, test_acc))
 
         selected = val_acc if args.model_selection == "val" else test_acc
         if selected > best_selected:
@@ -214,7 +222,8 @@ parser.add_argument("--features",
                     choices=["bow", "custom", "concat", "degree", "degree-onehot"],
                     default="bow")
 parser.add_argument("--custom-features-path", default=None,
-                    help="Defaults to data/hyperbolic_features/"
+                    help="Un nome di file nudo lo cerca in "
+                         "data/hyperbolic_features/. Default: "
                          "<dataset>_node_metrics.csv.")
 parser.add_argument("--custom-num-features", type=int, default=None,
                     help="Keep only the first m columns of the custom feature file.")
@@ -250,11 +259,13 @@ parser.add_argument("--model-selection", choices=["val", "test"], default="val",
                          "docstring. 'test' is the optimistic protocol behind the "
                          "published MUTAG numbers.")
 parser.add_argument("--seeds", default="0,1,2",
-                    help="Comma-separated; one full 10-fold CV per seed.")
+                    help="Comma-separated; one full 10-fold CV per se       ed.")
 parser.add_argument("--curves", nargs="?", const="auto", default=None,
-                    help="Salva la storia per epoca (seed, fold, epoch, loss, "
-                         "val/test acc) di ogni fold. Da solo sceglie il nome "
-                         "in base al run: "
+                    help="Salva la storia per epoca (loss e accuratezza su "
+                         "train/val/test) di tutti i fold del primo seed -- un "
+                         "seed solo perche' i fold sono gia' 10 curve, e perche' "
+                         "misurare train loss/acc costa un passaggio in piu' per "
+                         "epoca. Da solo sceglie il nome in base al run: "
                          "data/curves/graphclass_<dataset>_<pooling>_<features>.csv. "
                          "Con un path scrive li'. Si plotta con plot_curves.py.")
 args = parser.parse_args()
@@ -269,9 +280,7 @@ out_dim = int(labels.max()) + 1
 
 uses_custom = args.features in ("custom", "concat")
 
-custom_path = args.custom_features_path
-if custom_path is None and uses_custom:
-    custom_path = metrics_path(args.dataset)
+custom_path = metrics_path(args.dataset, args.custom_features_path) if uses_custom else None
 
 # The custom block is truncated and standardized over the *whole* dataset
 # and only then split back per graph: normalising inside a single molecule
@@ -318,6 +327,8 @@ print(f"\n{args.dataset} | features: {args.features}{trunc}{degree_note}{std_not
       f"{args.folds}-fold CV, model selection on {args.model_selection} | seeds {seeds}")
 
 seed_means = []
+# le curve sono quelle del primo seed: tutti i suoi fold, uno per riga di run
+curves_seed = seeds[0] if args.curves else None
 curve_rows = []
 for seed in seeds:
     torch.manual_seed(seed)
@@ -341,7 +352,7 @@ for seed in seeds:
 
         val_acc, test_acc, best_epoch, history = run_fold(
             model, loader(train_idx, shuffle=True), loader(val_idx),
-            loader(test_idx), args, device)
+            loader(test_idx), args, device, record=(seed == curves_seed))
         curve_rows += [(seed, fold) + row for row in history]
         fold_scores.append(test_acc)
         fold_epochs.append(best_epoch)
@@ -364,5 +375,6 @@ if args.curves:
         args.curves = curves_path("graphclass", args.dataset, args.pooling,
                                   feature_tag(args))
     write_curves(args.curves,
-                 ["seed", "fold", "epoch", "loss", "val_acc", "test_acc"],
+                 ["seed", "fold", "epoch", "train_loss", "val_loss", "test_loss",
+                  "train_acc", "val_acc", "test_acc"],
                  curve_rows)

@@ -5,7 +5,7 @@ import networkx as nx
 def get_neighborhood(G, target, k, strategy='full_neighborhood', m=None, seed=None):
     """
     Node indices within k hops of `target`, i.e. Hop_k(target) in the
-    notes' notation.
+    notes' notation, either exactly or sampled.
 
     `target` and the returned list are *positions* in list(G.nodes()) --
     the same index space as compute_distance_nodes / gromov_energy /
@@ -14,18 +14,56 @@ def get_neighborhood(G, target, k, strategy='full_neighborhood', m=None, seed=No
     translation is done explicitly so a graph with different labels
     returns the right ball instead of silently returning a wrong one.
 
-    Two strategies:
-      - 'full_neighborhood': exact k-hop ball via BFS. Can blow up on
-        hub nodes (common in citation graphs like Cora/CiteSeer), where
-        a handful of hops already reaches most of the graph.
-      - 'increasing_neighborhood': BFS that, at each hop, keeps at most
-        `m` randomly sampled neighbors per already-visited node instead
-        of all of them. This bounds the neighborhood size by roughly
-        sum_{i=1}^{k} m^i regardless of how connected the graph is,
-        which is what makes hub nodes tractable. `seed` controls which
-        neighbors get kept.
+    Four strategies. All of them return a *subset of the exact k-hop
+    ball*, so k always means "nothing further away than k hops" whatever
+    the strategy, and at fixed k they are directly comparable: they
+    differ only in how much of that ball they keep.
 
-    Returns a plain list of node indices (order is BFS order, not sorted).
+      'full_neighborhood'       the exact ball, via BFS. Can blow up on
+                                hub nodes (common in citation graphs
+                                like Cora/CiteSeer), where a couple of
+                                hops already reach most of the graph.
+                                Uses k.
+      'increasing_neighborhood' the GraphSAGE-style ball: at each hop
+                                keep at most `m` randomly sampled new
+                                neighbors per frontier node instead of
+                                all of them. Bounds the size by roughly
+                                sum_{i=1}^{k} m^i regardless of how
+                                connected the graph is, which is what
+                                makes hub nodes tractable. Uses k, m,
+                                seed.
+      'forest_fire'             Leskovec's forest fire: same shape, but
+                                the number of neighbors burned per node
+                                is *random* -- Geometric with mean m --
+                                instead of fixed at m. Same expected
+                                fanout as 'increasing_neighborhood', so
+                                the pair isolates what the variance of
+                                the fanout does on its own. The heavy
+                                tail occasionally burns a whole
+                                high-degree node, which is how forest
+                                fire keeps the long paths a fixed
+                                fanout cuts off.
+                                Uses k, m, seed.
+      'random_walk'             `m` independent random walks of k steps
+                                from `target`, keeping every node
+                                visited. Unlike the three above it does
+                                not sweep hop by hop: it spends its
+                                budget on a few long paths rather than
+                                on a shell around the target, so it
+                                reaches the k-th hop with far fewer
+                                nodes -- and it revisits, so it favours
+                                whatever the walk keeps coming back to
+                                (high degree, and denser regions).
+                                Uses k, m, seed.
+
+    Only 'full_neighborhood' has "position in the result == distance
+    from target". For the other three a node missed at hop i gets picked
+    up at hop i+1 through another path, so the hop at which a node shows
+    up is a sampling depth, an upper bound on its true distance and
+    usually a loose one.
+
+    Returns a plain list of node indices (order is visit order, not
+    sorted; `target` is always first).
     """
     nodes = list(G.nodes())
     index = {node: i for i, node in enumerate(nodes)}
@@ -66,6 +104,62 @@ def get_neighborhood(G, target, k, strategy='full_neighborhood', m=None, seed=No
 
             if not frontier:
                 break
+
+        return [index[n] for n in result]
+
+    if strategy == 'forest_fire':
+        rng = random.Random(seed)
+
+        visited = {source}
+        frontier = [source]
+        result = [source]
+
+        for _ in range(k):
+            next_frontier = []
+
+            for node in frontier:
+                candidates = [n for n in G.neighbors(node) if n not in visited]
+
+                # quanti vicini bruciare: si continua a bruciarne uno in piu'
+                # con probabilita' m/(m+1), cioe' una Geometrica di media
+                # esattamente m -- lo stesso fanout atteso di
+                # 'increasing_neighborhood', ma con una coda che ogni tanto
+                # brucia un nodo intero
+                burn = 0
+                while burn < len(candidates) and rng.random() < m / (m + 1):
+                    burn += 1
+
+                # i bruciati si marcano subito: al contrario di
+                # 'increasing_neighborhood' un fratello piu' avanti nella
+                # frontiera non riproponera' gli stessi nodi
+                for n in rng.sample(candidates, burn):
+                    visited.add(n)
+                    next_frontier.append(n)
+
+            result.extend(next_frontier)
+            frontier = next_frontier
+
+            if not frontier:
+                break
+
+        return [index[n] for n in result]
+
+    if strategy == 'random_walk':
+        rng = random.Random(seed)
+
+        visited = {source}
+        result = [source]
+
+        for _ in range(m):
+            node = source
+            for _ in range(k):
+                neighbors = list(G.neighbors(node))
+                if not neighbors:
+                    break            # nodo isolato: il cammino non parte
+                node = rng.choice(neighbors)
+                if node not in visited:
+                    visited.add(node)
+                    result.append(node)
 
         return [index[n] for n in result]
 

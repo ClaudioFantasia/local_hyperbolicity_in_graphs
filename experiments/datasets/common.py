@@ -30,7 +30,6 @@ external feature file must cover every node of every graph -- see
 """
 
 import csv
-import itertools
 import json
 import os
 import random
@@ -42,6 +41,8 @@ import torch
 from torch_geometric.data import Data
 from torch_geometric.datasets import Planetoid, TUDataset
 from torch_geometric.utils import subgraph, to_networkx
+
+from src.optimization.neighborhood import get_neighborhood
 
 # repo root, so the scripts work from any working directory
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
@@ -71,11 +72,24 @@ TU_DATASETS = {
 }
 
 
-def metrics_path(dataset):
+def metrics_path(dataset, path=None):
     """Where generate_features.py writes / the other scripts read the
-    per-node hyperbolicity scores for `dataset`."""
+    per-node hyperbolicity scores for `dataset`.
+
+    Con `path` (quello arrivato da --custom-features-path) risolve invece
+    quel file: se non esiste cosi' com'e' scritto lo cerca per nome dentro
+    data/hyperbolic_features/, dove stanno tutti i profili. Serve perche'
+    il default e' ancorato alla root del repo mentre un path da riga di
+    comando e' relativo alla working directory, quindi
+    --custom-features-path data/hyperbolic_features/mutag_node_metrics_beta01.csv
+    lanciato da un'altra cartella non lo troverebbe; cosi' basta anche il
+    solo nome del file."""
     os.makedirs(FEATURES_ROOT, exist_ok=True)
-    return os.path.join(FEATURES_ROOT, f"{dataset}_node_metrics.csv")
+    if path is None:
+        return os.path.join(FEATURES_ROOT, f"{dataset}_node_metrics.csv")
+    if not os.path.exists(path):
+        return os.path.join(FEATURES_ROOT, os.path.basename(path))
+    return path
 
 
 def feature_tag(args):
@@ -182,13 +196,28 @@ def to_nx(data):
     return to_networkx(data, to_undirected=True)
 
 
-def citation_patch(dataset, n=100, seed=0, source_node=None):
+def citation_patch(dataset, k=2, seed=0, source_node=None,
+                   strategy='full_neighborhood', m=5):
     """A small connected piece of `dataset`, as a networkx graph on nodes
-    0..n-1: BFS from a node of the LCC, keep the first n nodes reached,
-    take the induced subgraph (a BFS prefix is connected by construction).
+    0..n-1: the k-hop neighborhood of a node of the LCC, induced.
 
-    `source_node` is the LCC node id to start the BFS from (LCC ids, i.e.
-    the 0..n_lcc-1 relabeling of load_lcc, *not* the original Cora ids --
+    The neighborhood is whatever `get_neighborhood` returns for
+    (k, strategy, m, seed) -- the same function KL_score/entropic_score
+    call -- so the patch is exactly the thing the scores read, no
+    truncation and no node budget on top. Read that docstring for what
+    the four strategies do; here it is enough that every one of them
+    stays inside the exact k-hop ball, so k bounds the patch radius
+    whatever you pick, and only the density inside changes.
+
+    How big the patch comes out is therefore up to k and the strategy,
+    and it is not bounded in advance: 'full_neighborhood' with k=3 on a
+    Cora hub is most of the graph, while 'increasing_neighborhood' with
+    m=3 stays in the hundreds. The printed line reports the size -- keep
+    an eye on it, since the scoring downstream is O(size^4) in the
+    quads before sampling_quads' cap kicks in.
+
+    `source_node` is the LCC node id to start from (LCC ids, i.e. the
+    0..n_lcc-1 relabeling of load_lcc, *not* the original Cora ids --
     node_map[i] is the original id of LCC node i). With source_node=None
     it is drawn at random using `seed`.
 
@@ -205,17 +234,21 @@ def citation_patch(dataset, n=100, seed=0, source_node=None):
     """
     data, _ = load_lcc(dataset)
     G = to_nx(data)
+    nodes = list(G.nodes())
 
-    start = source_node if source_node is not None else random.Random(seed).choice(list(G.nodes()))
-    kept = list(itertools.islice(nx.bfs_tree(G, start), n))
+    start = source_node if source_node is not None else random.Random(seed).choice(nodes)
+
+    ball = get_neighborhood(G, start, k, strategy=strategy, m=m, seed=seed)
+    kept = [nodes[i] for i in ball]
     patch = nx.convert_node_labels_to_integers(G.subgraph(kept), ordering="sorted")
 
     # il relabeling e' per id crescente, quindi la sorgente nel patch e' il
     # suo rango fra i nodi tenuti: serve per puntarci target_nodes
     start_in_patch = sorted(kept).index(start)
 
+    detail = strategy if strategy == 'full_neighborhood' else f"{strategy} m={m} seed={seed}"
     print(f"patch di {dataset}: {patch.number_of_nodes()} nodi, "
-          f"{patch.number_of_edges()} archi, da BFS su {start} "
+          f"{patch.number_of_edges()} archi, da {detail} k={k} su {start} "
           f"(= nodo {start_in_patch} nel patch)")
     return patch
 
